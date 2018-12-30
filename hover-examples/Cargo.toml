@@ -5,3 +5,4 @@ authors = ["apohrebniak <andrii.pohrebniak@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+hover = {path = "../hover"}

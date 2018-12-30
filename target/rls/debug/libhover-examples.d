@@ -1,1 +1,1 @@
-/home/apohrebniak/RustProjects/hover/target/rls/debug/libhover-examples.rmeta: /home/apohrebniak/RustProjects/hover/hover-examples/src/main.rs
+/home/apohrebniak/RustProjects/hover/target/rls/debug/libhover-examples.rmeta: /home/apohrebniak/RustProjects/hover/hover/src/lib.rs /home/apohrebniak/RustProjects/hover/hover/src/service.rs /home/apohrebniak/RustProjects/hover/hover-examples/src/main.rs
