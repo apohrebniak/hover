@@ -1,12 +1,13 @@
 mod service;
 
-use std::net;
+use std::net::*;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::service::{ConnectionService, MulticastService, RunnableService};
 
 pub struct Hover {
-    host: String, //TODO: change to InetAddress
+    host: Ipv4Addr,
     port: u16,
     node: Option<Node>,
     started: bool,
@@ -15,7 +16,7 @@ pub struct Hover {
 impl Hover {
     pub fn new(host: String, port: u16) -> Hover {
         Hover {
-            host,
+            host: Ipv4Addr::from_str(&host).expect("IP address expected!"),
             port,
             node: Option::None,
             started: false,
@@ -31,35 +32,31 @@ impl Hover {
 
 struct Node {
     node_id: String,
-    host: String,
-    port: u16,
-    running: bool, //TODO: move to connection service
     connection_service: ConnectionService,
-    multicasts_service: MulticastService,
+    multicast_service: MulticastService,
 }
 
 impl Node {
-    fn new(host: String, port: u16) -> Node {
+    fn new(host: Ipv4Addr, port: u16) -> Node {
         let node_id = String::from("some_string_id(uuid)"); //TODO: generate later
 
-        let tcp_listener = net::TcpListener::bind((host.as_ref(), port)).unwrap(); //TODO: return result
-        let connection_service = ConnectionService::new(tcp_listener);
+        let connection_service = ConnectionService::new(host, port);
 
-        let multicasts_service = MulticastService { running: false };
+        /**Get multicast configs from config object*/
+        let multicast_addr = Ipv4Addr::new(228, 0, 0, 1);
+        let multicast_port: u16 = 2403;
+        let multicast_service = MulticastService::new(multicast_addr, multicast_port);
 
         Node {
             node_id,
-            host,
-            port,
-            running: false,
             connection_service,
-            multicasts_service,
+            multicast_service,
         }
     }
 
     fn start(&self) {
-        self.connection_service.start();
-        self.multicasts_service.start();
+         self.connection_service.start();
+        self.multicast_service.start();
 
         println!("Node has been started!");
     }

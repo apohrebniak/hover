@@ -5,3 +5,4 @@ authors = ["apohrebniak <andrii.pohrebniak@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+socket2 = { version = "0.3.8", features = ["reuseport"] }
