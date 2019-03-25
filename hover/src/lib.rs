@@ -1,7 +1,8 @@
-use common::Address;
-use service::{ClusterService, ConnectionService, DiscoveryService, MessagingService, Service};
 use std::net::*;
 use std::str::FromStr;
+
+use common::Address;
+use service::{ClusterService, ConnectionService, DiscoveryService, MessagingService, Service};
 
 mod cluster;
 pub mod common;
@@ -42,10 +43,17 @@ impl Hover {
         }
     }
 
-    pub fn start(&mut self) {
-        let node = Node::new(self.address.ip.clone(), self.address.port.clone());
-        node.start();
-        self.node = Option::from(node);
+    pub fn start(&mut self) -> Result<(), &str> {
+        match self.started {
+            true => Err("Hover is already started!"),
+            false => {
+                let node = Node::new(self.address.ip.clone(), self.address.port.clone());
+                node.start();
+                self.node = Option::from(node);
+                self.started = true;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -64,7 +72,7 @@ impl Node {
 
         let connection_service = ConnectionService::new(host, port);
 
-        /**Get multicast configs from config object*/
+        /**Get multicast configs from config object*/ //TODO: config object
         let multicast_addr = Ipv4Addr::new(228, 0, 0, 1);
         let multicast_port: u16 = 2403;
         let discovery_service = DiscoveryService::new(multicast_addr, multicast_port);

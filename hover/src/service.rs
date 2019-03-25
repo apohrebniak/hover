@@ -2,10 +2,12 @@ extern crate socket2;
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::error::Error;
+use std::io::Read;
 use std::net::*;
 use std::net::{Ipv4Addr, TcpListener};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use socket2::*;
 
@@ -50,9 +52,11 @@ impl Service for ConnectionService {
                 let stream = tcp_listener.accept();
                 match stream {
                     Ok(s) => {
-                        println!("Connection established!");
+                        dbg!("Connection established!");
                     }
-                    _ => println!("Error"),
+                    _ => {
+                        eprintln!("Error");
+                    }
                 }
             }
         });
@@ -61,7 +65,7 @@ impl Service for ConnectionService {
         self.worker_thread_handle
             .borrow_mut()
             .replace(worker_thread_handle);
-        println!("Connection service started");
+        dbg!("Connection service started");
     }
 }
 
@@ -69,7 +73,8 @@ impl Service for ConnectionService {
 pub struct DiscoveryService {
     multicast_address: Address,
     running: Arc<AtomicBool>,
-    worker_thread_handle: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
+    sender_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
+    listener_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl DiscoveryService {
@@ -81,45 +86,67 @@ impl DiscoveryService {
         DiscoveryService {
             multicast_address: addr,
             running: Arc::new(AtomicBool::default()),
-            worker_thread_handle: Arc::new(RefCell::new(Option::None)),
+            sender_thread: Arc::new(RefCell::new(Option::None)),
+            listener_thread: Arc::new(RefCell::new(Option::None)),
         }
     }
 }
 
 impl Service for DiscoveryService {
-    fn start(&self) {
+    fn start(&self) { //TODO: refactor this
         let running = self.running.clone();
         running.store(true, Ordering::Relaxed);
 
-        let addr = SockAddr::from(SocketAddrV4::new(
-            self.multicast_address.ip,
-            self.multicast_address.port,
+        let multi_addr = self.multicast_address.ip;
+        let multi_port = self.multicast_address.port;
+
+        let multi_sock = SockAddr::from(SocketAddrV4::new(
+            multi_addr,
+            multi_port,
         ));
 
-        let worker_thread_handler = std::thread::spawn(move || {
-            let multicast_socket =
-                socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
+        let socket_send = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
+        socket_send.connect(&multi_sock);
 
-            multicast_socket.connect(&addr);
+        let mut socket_receive = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
+        socket_receive.set_reuse_port(true);
+        socket_receive.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, multi_port))).unwrap();
+        socket_receive.join_multicast_v4(&multi_addr, &Ipv4Addr::UNSPECIFIED);
 
-            let msg = "Hello multicast!";
+        let sender_thread = std::thread::spawn(move || {
+            let msg = "Hello multicast!"; //TODO
+            dbg!("Started sending multicast messages");
             while running.load(Ordering::Relaxed) {
-                match multicast_socket.send(msg.as_bytes()) {
-                    Ok(_) => println!("OK"),
-                    Err(_) => eprintln!("err"),
+                match socket_send.send(msg.as_bytes()) { //TODO: filter destination
+                    Ok(_) => { dbg!("Sent message to multicast group: OK"); }
+                    Err(_) => eprintln!("Sent message to multicast group: ERR"),
                 };
-                std::thread::sleep_ms(1000);
+                std::thread::sleep_ms(1000); //TODO: change to interval setting
             }
         });
 
-        //create a connection thread
-        let worker_thread_handler = std::thread::spawn(move || {});
+        let running = self.running.clone();
 
-        //set thread handler to service. Service is the thread owner
-        self.worker_thread_handle
+        let listener_thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            loop {
+                match socket_receive.read(&mut buf) {
+                    Ok(size) => {
+                        println!("Received {} bytes via multicast", size);
+                    }
+                    Err(_) => eprintln!("Read message via multicast: ERR"),
+                }
+            }
+        });
+
+//        set thread handler to service. Service is the thread owner
+        self.sender_thread
             .borrow_mut()
-            .replace(worker_thread_handler);
-        println!("Multicast service started")
+            .replace(sender_thread);
+        self.listener_thread
+            .borrow_mut()
+            .replace(listener_thread);
+        dbg!("Multicast service started");
     }
 }
 
@@ -156,6 +183,7 @@ impl MessagingService {
         Ok(())
     }
 
+    //TODO: consider subscription topics
     pub fn multicast_to_addresses(
         &self,
         msg: Message,
@@ -177,6 +205,7 @@ impl Service for MessagingService {
     }
 }
 
+/**Service that allows to retrieve info about cluster members*/
 pub struct ClusterService {}
 
 impl ClusterService {
@@ -199,6 +228,6 @@ impl ClusterService {
 
 impl Service for ClusterService {
     fn start(&self) {
-        println!("Cluster service started")
+        dbg!("Cluster service started");
     }
 }

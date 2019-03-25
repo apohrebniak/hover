@@ -30,5 +30,5 @@ fn main() {
 
     //don't want to join on something
     //letf multicast and connection threads live on theis own
-    std::thread::sleep_ms(60000);
+    std::thread::sleep_ms(600000);
 }
