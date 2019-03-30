@@ -1,7 +1,7 @@
 extern crate hover;
 
 use hover::common::{Address, Message};
-use hover::service::MessagingService;
+use hover::service::messaging_service::MessagingService;
 use hover::Hover;
 use std::net::Ipv4Addr;
 

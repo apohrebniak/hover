@@ -1,8 +1,11 @@
+use common::Address;
+use service::cluster_service::ClusterService;
+use service::connection_service::ConnectionService;
+use service::discovery_service::DiscoveryService;
+use service::messaging_service::MessagingService;
+use service::Service;
 use std::net::*;
 use std::str::FromStr;
-
-use common::Address;
-use service::{ClusterService, ConnectionService, DiscoveryService, MessagingService, Service};
 
 mod cluster;
 pub mod common;
