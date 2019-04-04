@@ -6,3 +6,7 @@ edition = "2018"
 
 [dependencies]
 socket2 = { version = "0.3.8", features = ["reuseport"] }
+#serialization
+serde = { version = "1.0.89", features = ["derive"] }
+serde_json = { version = "1.0.39"}
+serde_repr = { version = "0.1.3"}

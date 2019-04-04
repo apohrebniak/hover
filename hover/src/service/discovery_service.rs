@@ -1,4 +1,6 @@
 extern crate socket2;
+extern crate serde_json;
+extern crate serde_repr;
 
 use socket2::*;
 
@@ -10,6 +12,9 @@ use std::net::*;
 use std::net::{Ipv4Addr, TcpListener};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use serde_repr::{Serialize_repr, Deserialize_repr};
+use serde::{Deserialize, Serialize};
 
 use crate::cluster::Member;
 use crate::common::{Address, Message};
@@ -24,13 +29,9 @@ pub struct DiscoveryService {
 }
 
 impl DiscoveryService {
-    pub fn new(multicast_addr: Ipv4Addr, multicast_port: u16) -> DiscoveryService {
-        let addr = Address {
-            ip: multicast_addr,
-            port: multicast_port,
-        };
+    pub fn new(multicast_address: Address) -> DiscoveryService {
         DiscoveryService {
-            multicast_address: addr,
+            multicast_address,
             running: Arc::new(AtomicBool::default()),
             sender_thread: Arc::new(RefCell::new(Option::None)),
             listener_thread: Arc::new(RefCell::new(Option::None)),
@@ -46,13 +47,13 @@ impl Service for DiscoveryService {
         let multi_addr = self.multicast_address.ip;
         let multi_port = self.multicast_address.port;
 
-        let multi_sock = SockAddr::from(SocketAddrV4::new(
+        let multi_sock_addr = SockAddr::from(SocketAddrV4::new(
             multi_addr,
             multi_port,
         ));
 
         let socket_send = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
-        socket_send.connect(&multi_sock);
+        socket_send.connect(&multi_sock_addr);
 
         let mut socket_receive = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
         socket_receive.set_reuse_port(true);
@@ -94,4 +95,18 @@ impl Service for DiscoveryService {
             .replace(listener_thread);
         dbg!("Multicast service started");
     }
+}
+
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
+#[repr(u8)]
+enum DiscoveryMessageType {
+    CONNECTION_TRY = 0,
+    CONNECTION_OK = 1,
+    CONNECTION_DUPLICATE = 2,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
+struct DiscoveryMessage {
+    r#type: DiscoveryMessageType,
+    node_id: String,
 }

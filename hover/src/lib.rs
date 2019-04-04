@@ -73,12 +73,13 @@ impl Node {
     fn new(host: Ipv4Addr, port: u16) -> Node {
         let node_id = String::from("some_string_id(uuid)"); //TODO: generate later
 
-        let connection_service = ConnectionService::new(host, port);
+        let return_address = Address {ip: host, port};
+
+        let connection_service = ConnectionService::new(return_address);
 
         /**Get multicast configs from config object*/ //TODO: config object
-        let multicast_addr = Ipv4Addr::new(228, 0, 0, 1);
-        let multicast_port: u16 = 2403;
-        let discovery_service = DiscoveryService::new(multicast_addr, multicast_port);
+        let multicast_addr = Address{ip: Ipv4Addr::new(228, 0, 0, 1), port: 2403};
+        let discovery_service = DiscoveryService::new(multicast_addr);
 
         let messaging_service = MessagingService::new();
         let cluster_service = ClusterService::new();

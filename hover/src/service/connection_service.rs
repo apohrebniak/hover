@@ -17,16 +17,15 @@ use crate::service::Service;
 
 /**Connection service*/
 pub struct ConnectionService {
-    address: Address,
+    local_address: Address,
     running: Arc<AtomicBool>,
     worker_thread_handle: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl ConnectionService {
-    pub fn new(host: Ipv4Addr, port: u16) -> ConnectionService {
-        let addr = Address { ip: host, port };
+    pub fn new(local_address: Address) -> ConnectionService {
         ConnectionService {
-            address: addr,
+            local_address,
             running: Arc::new(AtomicBool::default()),
             worker_thread_handle: Arc::new(RefCell::new(Option::None)),
         }
@@ -36,7 +35,7 @@ impl ConnectionService {
 impl Service for ConnectionService {
     fn start(&self) {
         let tcp_listener =
-            TcpListener::bind((self.address.ip, self.address.port)).expect("Can't create node!");
+            TcpListener::bind((self.local_address.ip, self.local_address.port)).expect("Can't create node!");
 
         //set running state
         let running = self.running.clone();

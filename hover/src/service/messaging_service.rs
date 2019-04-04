@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cluster::Member;
-use crate::common::{Address, Message};
+use crate::common::{Address, Message, MessageType};
 use crate::service::Service;
 
 /**Service for sending messages across cluster.*/
@@ -35,12 +35,22 @@ impl MessagingService {
 
     pub fn send_to_address_receive(&self, msg: Message, address: Address) -> Result<Message, &str> {
         dbg!("send and receive to address");
-        Ok(Message {})
+        Ok(Message {
+            correlation: None,
+            r#type: MessageType::REQUEST,
+            payload: Vec::new(),
+            return_address: None,
+        })
     }
 
     pub fn send_to_member_receive(&self, msg: Message, member: Member) -> Result<Message, &str> {
         dbg!("send and receive to address");
-        Ok(Message {})
+        Ok(Message {
+            correlation: None,
+            r#type: MessageType::REQUEST,
+            payload: Vec::new(),
+            return_address: None,
+        })
     }
 
     pub fn broadcast(&self, msg: Message) -> Result<(), &str> {
