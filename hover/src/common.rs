@@ -25,3 +25,17 @@ pub struct Message {
     pub payload: Vec<u8>,
     pub return_address: Option<Address>,
 }
+
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
+#[repr(u8)]
+enum ConnectionMessageType {
+    Try = 0,
+    Ok = 1,
+    Duplicate = 2,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
+struct ConnectionMessage {
+    r#type: ConnectionMessageType,
+    node_id: String,
+}

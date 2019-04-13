@@ -25,7 +25,7 @@ pub struct DiscoveryService {
     multicast_address: Address,
     running: Arc<AtomicBool>,
     sender_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
-    listener_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
+    handler_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl DiscoveryService {
@@ -34,15 +34,12 @@ impl DiscoveryService {
             multicast_address,
             running: Arc::new(AtomicBool::default()),
             sender_thread: Arc::new(RefCell::new(Option::None)),
-            listener_thread: Arc::new(RefCell::new(Option::None)),
+            handler_thread: Arc::new(RefCell::new(Option::None)),
         }
     }
-}
 
-impl Service for DiscoveryService {
-    fn start(&self) { //TODO: refactor this
-        let running = self.running.clone();
-        running.store(true, Ordering::Relaxed);
+    fn start_inner(&self) -> Result<(), &str> {
+        let running = self.running.store(true, Ordering::Relaxed);
 
         let multi_addr = self.multicast_address.ip;
         let multi_port = self.multicast_address.port;
@@ -52,32 +49,73 @@ impl Service for DiscoveryService {
             multi_port,
         ));
 
-        let socket_send = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
-        socket_send.connect(&multi_sock_addr);
+        let socket_send = self.build_socket_send(&multi_sock_addr)?;
+        let mut socket_receive = self.build_socket_receive(&multi_addr, multi_port)?;
 
-        let mut socket_receive = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
-        socket_receive.set_reuse_port(true);
-        socket_receive.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, multi_port))).unwrap();
-        socket_receive.join_multicast_v4(&multi_addr, &Ipv4Addr::UNSPECIFIED);
+        let sender_thread = self.join(socket_send)?;
+        let handler_thread = self.multicast_handler(socket_receive)?;
 
-        let sender_thread = std::thread::spawn(move || {
-            let msg = "Hello multicast!"; //TODO
+//        set thread handler to service. Service is the thread owner
+        self.sender_thread
+            .borrow_mut()
+            .replace(sender_thread);
+        self.handler_thread
+            .borrow_mut()
+            .replace(handler_thread);
+        dbg!("Multicast service started");
+
+        Ok(())
+    }
+
+    fn build_socket_send(&self, multi_sock_addr: &SockAddr) -> Result<Socket, &str> {
+        let mut socket = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
+        socket.connect(multi_sock_addr);
+
+        Ok(socket)
+    }
+
+    fn build_socket_receive(&self, multi_addr: &Ipv4Addr, multi_port: u16) -> Result<Socket, &str> {
+        let mut socket = socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
+        socket.set_reuse_port(true);
+        socket.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, multi_port))).unwrap();
+        socket.join_multicast_v4(multi_addr, &Ipv4Addr::UNSPECIFIED);
+
+        Ok(socket)
+    }
+
+    fn join(&self, socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
+        let running = self.running.clone();
+
+        let msg = DiscoveryMessage{
+            r#type: DiscoveryMessageType::Join,
+            node_id: String::from("123-456-789"),
+        };
+
+        let msg = serde_json::to_string(&msg)
+            .map(|json| json.into_bytes())
+            .unwrap();
+
+        let thread = std::thread::spawn(move || {
             dbg!("Started sending multicast messages");
             while running.load(Ordering::Relaxed) {
-                match socket_send.send(msg.as_bytes()) { //TODO: filter destination
+                match socket.send(msg.as_slice()) { //TODO: filter destination
                     Ok(_) => { dbg!("Sent message to multicast group: OK"); }
                     Err(_) => eprintln!("Sent message to multicast group: ERR"),
                 };
-                std::thread::sleep_ms(1000); //TODO: change to interval setting
+                std::thread::sleep_ms(2000); //TODO: change to interval setting
             }
         });
 
-        let running = self.running.clone();
+        Ok(thread)
+    }
 
-        let listener_thread = std::thread::spawn(move || {
+    fn multicast_handler(&self, mut socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
+        let running = self.running.clone();
+        //TODO: investigate how to read messages from socket. Should I know the size of it? Should i use the buffer size with the capacity equals to the maximum message size?
+        let thread = std::thread::spawn(move || {
             let mut buf = [0u8; 1024];
-            loop {
-                match socket_receive.read(&mut buf) {
+            while running.load(Ordering::Relaxed) {
+                match socket.read(&mut buf) {
                     Ok(size) => {
                         println!("Received {} bytes via multicast", size);
                     }
@@ -86,25 +124,24 @@ impl Service for DiscoveryService {
             }
         });
 
-//        set thread handler to service. Service is the thread owner
-        self.sender_thread
-            .borrow_mut()
-            .replace(sender_thread);
-        self.listener_thread
-            .borrow_mut()
-            .replace(listener_thread);
-        dbg!("Multicast service started");
+        Ok(thread)
+    }
+}
+
+impl Service for DiscoveryService {
+    fn start(&self) {
+        self.start_inner();
     }
 }
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
 #[repr(u8)]
 enum DiscoveryMessageType {
-    CONNECTION_TRY = 0,
-    CONNECTION_OK = 1,
-    CONNECTION_DUPLICATE = 2,
+    Join = 0, // node joined the cluster and ready to pickup connections
+    Leave = 1, // node is leaving the cluster
 }
 
+/**Message that multicasts*/
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 struct DiscoveryMessage {
     r#type: DiscoveryMessageType,

@@ -46,7 +46,7 @@ impl Service for ConnectionService {
                 println!("Connection loop started!");
                 let stream = tcp_listener.accept();
                 match stream {
-                    Ok(s) => {
+                    Ok((stream, addr)) => {
                         dbg!("Connection established!");
                     }
                     _ => {
