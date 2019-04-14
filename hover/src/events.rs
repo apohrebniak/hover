@@ -1,18 +1,17 @@
 extern crate crossbeam_channel;
 
-use core::borrow::BorrowMut;
 use std::error::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use self::crossbeam_channel::{Receiver, Sender};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Copy, Clone)]
 pub enum Event {
     Empty,
 }
 
-struct EventLoop {
+pub struct EventLoop {
     atomic_run: Arc<AtomicBool>,
     sender: Sender<Event>,
     receiver: Receiver<Event>,
@@ -20,7 +19,7 @@ struct EventLoop {
 }
 
 impl EventLoop {
-    fn new() -> EventLoop {
+    pub fn new() -> EventLoop {
         let (s, r): (Sender<Event>, Receiver<Event>) = crossbeam_channel::unbounded();
 
         EventLoop {
@@ -31,7 +30,7 @@ impl EventLoop {
         }
     }
 
-    fn add_listener(
+    pub fn add_listener(
         &mut self,
         listener: Arc<EventListener + Send + Sync>,
     ) -> Result<(), Box<Error>> {
@@ -39,7 +38,7 @@ impl EventLoop {
         Ok(())
     }
 
-    fn post_event(&self, event: Event) -> Result<(), Box<Error>> {
+    pub fn post_event(&self, event: Event) -> Result<(), Box<Error>> {
         match self.sender.send(event) {
             Ok(_) => Ok(()),
             Err(e) => Err(Box::new(e)),
@@ -47,7 +46,7 @@ impl EventLoop {
     }
 
     //TODO: join on the thread
-    fn start(&self) {
+    pub fn start(&self) {
         self.atomic_run.store(true, Ordering::Relaxed);
 
         let running_ = self.atomic_run.clone();
@@ -67,6 +66,6 @@ impl EventLoop {
     }
 }
 
-trait EventListener {
+pub trait EventListener {
     fn on_event(&self, event: Event);
 }

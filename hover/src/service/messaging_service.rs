@@ -1,15 +1,6 @@
 extern crate socket2;
 
-use socket2::*;
-
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::error::Error;
-use std::io::Read;
-use std::net::*;
-use std::net::{Ipv4Addr, TcpListener};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::cluster::Member;
 use crate::common::{Address, Message, MessageType};

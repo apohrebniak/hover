@@ -1,11 +1,15 @@
+use std::net::*;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+
 use common::Address;
 use service::cluster_service::ClusterService;
 use service::connection_service::ConnectionService;
 use service::discovery_service::DiscoveryService;
 use service::messaging_service::MessagingService;
 use service::Service;
-use std::net::*;
-use std::str::FromStr;
+
+use crate::events::EventLoop;
 
 mod cluster;
 pub mod common;
@@ -67,7 +71,8 @@ struct Node {
     connection_service: ConnectionService,
     discovery_service: DiscoveryService,
     messaging_service: MessagingService,
-    cluster_service: ClusterService,
+    cluster_service: Arc<ClusterService>,
+    event_loop: Arc<Mutex<EventLoop>>,
 }
 
 impl Node {
@@ -83,10 +88,18 @@ impl Node {
             ip: Ipv4Addr::new(228, 0, 0, 1),
             port: 2403,
         };
-        let discovery_service = DiscoveryService::new(multicast_addr);
+
+        let event_loop = Arc::new(Mutex::new(EventLoop::new()));
+
+        let discovery_service = DiscoveryService::new(multicast_addr, event_loop.clone());
 
         let messaging_service = MessagingService::new();
-        let cluster_service = ClusterService::new();
+        let cluster_service = Arc::new(ClusterService::new());
+
+        event_loop
+            .lock()
+            .unwrap()
+            .add_listener(cluster_service.clone());
 
         Node {
             node_id,
@@ -94,12 +107,15 @@ impl Node {
             discovery_service,
             messaging_service,
             cluster_service,
+            event_loop,
         }
     }
 
     fn start(&self) {
         self.connection_service.start();
         self.discovery_service.start();
+
+        self.event_loop.lock().unwrap().start();
 
         println!("Node has been started!");
     }

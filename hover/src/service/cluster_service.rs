@@ -1,18 +1,10 @@
 extern crate socket2;
 
-use socket2::*;
-
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::error::Error;
-use std::io::Read;
-use std::net::*;
-use std::net::{Ipv4Addr, TcpListener};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::cluster::Member;
-use crate::common::{Address, Message};
+use crate::common::Address;
+use crate::events::{Event, EventListener};
 use crate::service::Service;
 
 /**Service that allows to retrieve info about cluster members*/
@@ -39,5 +31,11 @@ impl ClusterService {
 impl Service for ClusterService {
     fn start(&self) {
         dbg!("Cluster service started");
+    }
+}
+
+impl EventListener for ClusterService {
+    fn on_event(&self, event: Event) {
+        println!("DAMN BOIIIIII");
     }
 }

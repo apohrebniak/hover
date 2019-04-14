@@ -2,39 +2,38 @@ extern crate serde_json;
 extern crate serde_repr;
 extern crate socket2;
 
-use socket2::*;
-
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::error::Error;
 use std::io::Read;
+use std::net::Ipv4Addr;
 use std::net::*;
-use std::net::{Ipv4Addr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use socket2::*;
 
-use crate::cluster::Member;
-use crate::common::{Address, Message};
+use crate::common::Address;
+use crate::events::{Event, EventLoop};
 use crate::service::Service;
 
 /**Discovery service*/
 pub struct DiscoveryService {
     multicast_address: Address,
     running: Arc<AtomicBool>,
-    sender_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
-    handler_thread: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
+    sender_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
+    handler_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
+    event_loop: Arc<Mutex<EventLoop>>,
 }
 
 impl DiscoveryService {
-    pub fn new(multicast_address: Address) -> DiscoveryService {
+    pub fn new(multicast_address: Address, event_loop: Arc<Mutex<EventLoop>>) -> DiscoveryService {
         DiscoveryService {
             multicast_address,
             running: Arc::new(AtomicBool::default()),
-            sender_thread: Arc::new(RefCell::new(Option::None)),
-            handler_thread: Arc::new(RefCell::new(Option::None)),
+            sender_thread: Arc::new(Mutex::new(Option::None)),
+            handler_thread: Arc::new(Mutex::new(Option::None)),
+            event_loop,
         }
     }
 
@@ -47,21 +46,21 @@ impl DiscoveryService {
         let multi_sock_addr = SockAddr::from(SocketAddrV4::new(multi_addr, multi_port));
 
         let socket_send = self.build_socket_send(&multi_sock_addr)?;
-        let mut socket_receive = self.build_socket_receive(&multi_addr, multi_port)?;
+        let socket_receive = self.build_socket_receive(&multi_addr, multi_port)?;
 
         let sender_thread = self.join(socket_send)?;
         let handler_thread = self.multicast_handler(socket_receive)?;
 
         //        set thread handler to service. Service is the thread owner
-        self.sender_thread.borrow_mut().replace(sender_thread);
-        self.handler_thread.borrow_mut().replace(handler_thread);
+        self.sender_thread.lock().unwrap().replace(sender_thread);
+        self.handler_thread.lock().unwrap().replace(handler_thread);
         dbg!("Multicast service started");
 
         Ok(())
     }
 
     fn build_socket_send(&self, multi_sock_addr: &SockAddr) -> Result<Socket, &str> {
-        let mut socket =
+        let socket =
             socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
         socket.connect(multi_sock_addr);
 
@@ -69,7 +68,7 @@ impl DiscoveryService {
     }
 
     fn build_socket_receive(&self, multi_addr: &Ipv4Addr, multi_port: u16) -> Result<Socket, &str> {
-        let mut socket =
+        let socket =
             socket2::Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())).unwrap();
         socket.set_reuse_port(true);
         socket
@@ -113,13 +112,16 @@ impl DiscoveryService {
     }
 
     fn multicast_handler(&self, mut socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
-        let running = self.running.clone();
+        let running_ = self.running.clone();
+        let e_loop_ = self.event_loop.clone();
+
         //TODO: investigate how to read messages from socket. Should I know the size of it? Should i use the buffer size with the capacity equals to the maximum message size?
         let thread = std::thread::spawn(move || {
             let mut buf = [0u8; 1024];
-            while running.load(Ordering::Relaxed) {
+            while running_.load(Ordering::Relaxed) {
                 match socket.read(&mut buf) {
                     Ok(size) => {
+                        e_loop_.lock().unwrap().post_event(Event::Empty);
                         println!("Received {} bytes via multicast", size);
                     }
                     Err(_) => eprintln!("Read message via multicast: ERR"),
@@ -140,7 +142,8 @@ impl Service for DiscoveryService {
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
 #[repr(u8)]
 enum DiscoveryMessageType {
-    Join = 0,  // node joined the cluster and ready to pickup connections
+    Join = 0,
+    // node joined the cluster and ready to pickup connections
     Leave = 1, // node is leaving the cluster
 }
 
