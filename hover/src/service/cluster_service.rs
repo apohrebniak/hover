@@ -8,8 +8,8 @@ use std::error::Error;
 use std::io::Read;
 use std::net::*;
 use std::net::{Ipv4Addr, TcpListener};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::cluster::Member;
 use crate::common::{Address, Message};

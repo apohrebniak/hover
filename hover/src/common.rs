@@ -1,9 +1,9 @@
 extern crate serde_json;
 extern crate serde_repr;
 
-use std::net::*;
-use serde_repr::{Serialize_repr, Deserialize_repr};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::net::*;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Eq)]
 pub struct Address {

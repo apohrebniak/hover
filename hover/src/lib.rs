@@ -9,6 +9,7 @@ use std::str::FromStr;
 
 mod cluster;
 pub mod common;
+pub mod events;
 pub mod service;
 
 /**Main API for using service*/
@@ -73,12 +74,15 @@ impl Node {
     fn new(host: Ipv4Addr, port: u16) -> Node {
         let node_id = String::from("some_string_id(uuid)"); //TODO: generate later
 
-        let return_address = Address {ip: host, port};
+        let return_address = Address { ip: host, port };
 
         let connection_service = ConnectionService::new(return_address);
 
         /**Get multicast configs from config object*/ //TODO: config object
-        let multicast_addr = Address{ip: Ipv4Addr::new(228, 0, 0, 1), port: 2403};
+        let multicast_addr = Address {
+            ip: Ipv4Addr::new(228, 0, 0, 1),
+            port: 2403,
+        };
         let discovery_service = DiscoveryService::new(multicast_addr);
 
         let messaging_service = MessagingService::new();
