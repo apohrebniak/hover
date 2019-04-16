@@ -9,11 +9,13 @@ use service::discovery_service::DiscoveryService;
 use service::messaging_service::MessagingService;
 use service::Service;
 
+use crate::common::NodeMeta;
 use crate::events::EventLoop;
 
 mod cluster;
 pub mod common;
 pub mod events;
+pub mod serialize;
 pub mod service;
 
 /**Main API for using service*/
@@ -67,7 +69,7 @@ impl Hover {
 
 /**Representation of the Hover node*/
 struct Node {
-    node_id: String,
+    meta: NodeMeta,
     connection_service: ConnectionService,
     discovery_service: DiscoveryService,
     messaging_service: MessagingService,
@@ -79,9 +81,12 @@ impl Node {
     fn new(host: Ipv4Addr, port: u16) -> Node {
         let node_id = String::from("some_string_id(uuid)"); //TODO: generate later
 
-        let return_address = Address { ip: host, port };
+        let node_meta = NodeMeta {
+            id: node_id,
+            addr: Address { ip: host, port },
+        };
 
-        let connection_service = ConnectionService::new(return_address);
+        let connection_service = ConnectionService::new(node_meta.clone());
 
         /**Get multicast configs from config object*/ //TODO: config object
         let multicast_addr = Address {
@@ -91,7 +96,8 @@ impl Node {
 
         let event_loop = Arc::new(Mutex::new(EventLoop::new()));
 
-        let discovery_service = DiscoveryService::new(multicast_addr, event_loop.clone());
+        let discovery_service =
+            DiscoveryService::new(node_meta.clone(), multicast_addr, event_loop.clone());
 
         let messaging_service = MessagingService::new();
         let cluster_service = Arc::new(ClusterService::new());
@@ -102,7 +108,7 @@ impl Node {
             .add_listener(cluster_service.clone());
 
         Node {
-            node_id,
+            meta: node_meta.clone(),
             connection_service,
             discovery_service,
             messaging_service,

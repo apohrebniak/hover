@@ -4,11 +4,13 @@ use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use self::crossbeam_channel::{Receiver, Sender};
+use crate::common::{Address, NodeMeta};
+use crossbeam_channel::{Receiver, Sender};
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Event {
     Empty,
+    DiscoveryEvent { node_meta: NodeMeta },
 }
 
 pub struct EventLoop {

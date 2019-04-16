@@ -1,5 +1,3 @@
-extern crate serde_json;
-extern crate serde_repr;
 extern crate socket2;
 
 use std::io::Read;
@@ -10,15 +8,19 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use socket2::*;
 
-use crate::common::Address;
+use crate::common::{Address, NodeMeta};
+use crate::events::Event::DiscoveryEvent;
 use crate::events::{Event, EventLoop};
+use crate::serialize;
 use crate::service::Service;
+
+const MULTICAST_INPUT_BUFF_SIZE: usize = 256;
 
 /**Discovery service*/
 pub struct DiscoveryService {
+    local_node_meta: NodeMeta,
     multicast_address: Address,
     running: Arc<AtomicBool>,
     sender_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -27,8 +29,13 @@ pub struct DiscoveryService {
 }
 
 impl DiscoveryService {
-    pub fn new(multicast_address: Address, event_loop: Arc<Mutex<EventLoop>>) -> DiscoveryService {
+    pub fn new(
+        local_node_meta: NodeMeta,
+        multicast_address: Address,
+        event_loop: Arc<Mutex<EventLoop>>,
+    ) -> DiscoveryService {
         DiscoveryService {
+            local_node_meta,
             multicast_address,
             running: Arc::new(AtomicBool::default()),
             sender_thread: Arc::new(Mutex::new(Option::None)),
@@ -87,18 +94,15 @@ impl DiscoveryService {
 
         let msg = DiscoveryMessage {
             r#type: DiscoveryMessageType::Join,
-            node_id: String::from("123-456-789"),
+            node_meta: self.local_node_meta.clone(),
         };
 
-        let msg = serde_json::to_string(&msg)
-            .map(|json| json.into_bytes())
-            .unwrap();
+        let msg = serialize::to_bytes(&msg).unwrap();
 
         let thread = std::thread::spawn(move || {
             dbg!("Started sending multicast messages");
             while running.load(Ordering::Relaxed) {
                 match socket.send(msg.as_slice()) {
-                    //TODO: filter destination
                     Ok(_) => {
                         dbg!("Sent message to multicast group: OK");
                     }
@@ -115,14 +119,21 @@ impl DiscoveryService {
         let running_ = self.running.clone();
         let e_loop_ = self.event_loop.clone();
 
-        //TODO: investigate how to read messages from socket. Should I know the size of it? Should i use the buffer size with the capacity equals to the maximum message size?
         let thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 1024];
             while running_.load(Ordering::Relaxed) {
-                match socket.read(&mut buf) {
-                    Ok(size) => {
-                        e_loop_.lock().unwrap().post_event(Event::Empty);
-                        println!("Received {} bytes via multicast", size);
+                let mut buff = [0u8; MULTICAST_INPUT_BUFF_SIZE];
+
+                match socket.recv_from(&mut buff) {
+                    Ok((size, sockaddr)) => {
+                        println!("received {} bytes", size);
+                        match serialize::from_bytes(&buff) {
+                            Ok(msg) => {
+                                let event =
+                                    self::DiscoveryService::build_discovery_event(&msg, &sockaddr);
+                                e_loop_.lock().unwrap().post_event(event);
+                            }
+                            Err(_) => {}
+                        }
                     }
                     Err(_) => eprintln!("Read message via multicast: ERR"),
                 }
@@ -130,6 +141,15 @@ impl DiscoveryService {
         });
 
         Ok(thread)
+    }
+
+    fn build_discovery_event(msg: &DiscoveryMessage, sockaddr: &SockAddr) -> Event {
+        let ip = sockaddr.as_inet().map(|i| i.ip().clone()).unwrap();
+        let port = sockaddr.as_inet().map(|i| i.port()).unwrap();
+
+        DiscoveryEvent {
+            node_meta: msg.node_meta.clone(),
+        }
     }
 }
 
@@ -139,11 +159,10 @@ impl Service for DiscoveryService {
     }
 }
 
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
-#[repr(u8)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 enum DiscoveryMessageType {
-    Join = 0,
     // node joined the cluster and ready to pickup connections
+    Join = 0,
     Leave = 1, // node is leaving the cluster
 }
 
@@ -151,5 +170,5 @@ enum DiscoveryMessageType {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 struct DiscoveryMessage {
     r#type: DiscoveryMessageType,
-    node_id: String,
+    node_meta: NodeMeta,
 }

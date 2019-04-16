@@ -5,20 +5,20 @@ use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::common::Address;
+use crate::common::{Address, NodeMeta};
 use crate::service::Service;
 
 /**Connection service*/
 pub struct ConnectionService {
-    local_address: Address,
+    local_node_meta: NodeMeta,
     running: Arc<AtomicBool>,
     worker_thread_handle: Arc<RefCell<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl ConnectionService {
-    pub fn new(local_address: Address) -> ConnectionService {
+    pub fn new(local_node_meta: NodeMeta) -> ConnectionService {
         ConnectionService {
-            local_address,
+            local_node_meta,
             running: Arc::new(AtomicBool::default()),
             worker_thread_handle: Arc::new(RefCell::new(Option::None)),
         }
@@ -27,8 +27,8 @@ impl ConnectionService {
 
 impl Service for ConnectionService {
     fn start(&self) {
-        let tcp_listener = TcpListener::bind((self.local_address.ip, self.local_address.port))
-            .expect("Can't create node!");
+        let addr = &self.local_node_meta.addr;
+        let tcp_listener = TcpListener::bind((addr.ip, addr.port)).expect("Can't create node!");
 
         //set running state
         let running = self.running.clone();

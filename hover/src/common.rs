@@ -6,7 +6,13 @@ use std::net::*;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Eq, Clone)]
+pub struct NodeMeta {
+    pub id: String,
+    pub addr: Address,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Eq, Clone)]
 pub struct Address {
     pub ip: Ipv4Addr,
     pub port: u16,
