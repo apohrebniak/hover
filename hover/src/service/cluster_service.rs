@@ -8,22 +8,22 @@ use crate::events::{Event, EventListener};
 use crate::service::Service;
 
 /**Service that allows to retrieve info about cluster members*/
-pub struct ClusterService {}
+pub struct MembershipService {}
 
-impl ClusterService {
-    pub fn new() -> ClusterService {
-        ClusterService {}
+impl MembershipService {
+    pub fn new() -> MembershipService {
+        MembershipService {}
     }
 
-    pub fn get_members() -> HashSet<Member> {
+    pub fn get_members(&self) -> HashSet<Member> {
         HashSet::new() //TODO
     }
 
-    pub fn get_member_by_id(member_id: &str) -> Option<Member> {
+    pub fn get_member_by_id(&self, member_id: &str) -> Option<Member> {
         None
     }
 
-    pub fn get_member_by_address(address: Address) -> Option<Member> {
+    pub fn get_member_by_address(&self, address: Address) -> Option<Member> {
         None
     }
 
@@ -32,21 +32,22 @@ impl ClusterService {
     }
 }
 
-impl Service for ClusterService {
+impl Service for MembershipService {
     fn start(&self) {
         dbg!("Cluster service started");
     }
 }
 
-impl EventListener for ClusterService {
+impl EventListener for MembershipService {
     fn on_event(&self, event: Event) {
         match event {
-            Event::DiscoveryEvent { node_meta } => {
+            Event::DiscoveryIn { node_meta } => {
                 self.handle_discovered_node(node_meta);
             }
             Event::Empty => {
                 dbg!("Handled an empty event");
             }
+            _ => {}
         }
     }
 }

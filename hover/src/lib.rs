@@ -1,20 +1,26 @@
 use std::net::*;
+use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use common::Address;
-use service::cluster_service::ClusterService;
+use message::MessagingService;
+use service::cluster_service::MembershipService;
 use service::connection_service::ConnectionService;
 use service::discovery_service::DiscoveryService;
-use service::messaging_service::MessagingService;
 use service::Service;
 
-use crate::common::NodeMeta;
+use crate::common::{Message, NodeMeta};
 use crate::events::EventLoop;
+use crate::message::MessageDispatcher;
+use core::borrow::{Borrow, BorrowMut};
+use std::error::Error;
+use uuid::Uuid;
 
 mod cluster;
 pub mod common;
 pub mod events;
+pub mod message;
 pub mod serialize;
 pub mod service;
 
@@ -39,9 +45,9 @@ impl Hover {
         }
     }
 
-    pub fn get_cluster_service(&self) -> Result<&ClusterService, &str> {
+    pub fn get_cluster_service(&self) -> Result<Arc<RwLock<MembershipService>>, &str> {
         match self.node {
-            Some(ref node) => Ok(&node.cluster_service),
+            Some(ref node) => Ok(node.membership_service.clone()),
             None => Err("Node is not initialized!"),
         }
     }
@@ -65,28 +71,50 @@ impl Hover {
             }
         }
     }
+
+    pub fn add_msg_listener<F>(&mut self, f: F) -> Result<&Hover, Box<()>>
+    where
+        F: Fn(Arc<Message>) -> () + 'static + Send + Sync,
+    {
+        match self.node {
+            Some(ref mut n) => match n.add_msg_listener(f) {
+                Ok(_) => Ok(self),
+                Err(_) => Err(Box::new(())),
+            },
+            None => Err(Box::new(())),
+        }
+    }
+
+    pub fn subscribe_for_topic(&mut self) -> Result<&Hover, Box<()>> {
+        match self.node {
+            Some(ref mut n) => match n.subscribe_for_topic() {
+                Ok(_) => Ok(self),
+                Err(_) => Err(Box::new(())),
+            },
+            None => Err(Box::new(())),
+        }
+    }
 }
 
 /**Representation of the Hover node*/
 struct Node {
     meta: NodeMeta,
-    connection_service: ConnectionService,
+    connection_service: Arc<RwLock<ConnectionService>>,
     discovery_service: DiscoveryService,
     messaging_service: MessagingService,
-    cluster_service: Arc<ClusterService>,
-    event_loop: Arc<Mutex<EventLoop>>,
+    membership_service: Arc<RwLock<MembershipService>>,
+    message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+    event_loop: Arc<RwLock<EventLoop>>,
 }
 
 impl Node {
     fn new(host: Ipv4Addr, port: u16) -> Node {
-        let node_id = String::from("some_string_id(uuid)"); //TODO: generate later
+        let node_id = Uuid::new_v4();
 
         let node_meta = NodeMeta {
             id: node_id,
             addr: Address { ip: host, port },
         };
-
-        let connection_service = ConnectionService::new(node_meta.clone());
 
         /**Get multicast configs from config object*/ //TODO: config object
         let multicast_addr = Address {
@@ -94,35 +122,72 @@ impl Node {
             port: 2403,
         };
 
-        let event_loop = Arc::new(Mutex::new(EventLoop::new()));
+        let event_loop = Arc::new(RwLock::new(EventLoop::new()));
+
+        let membership_service = Arc::new(RwLock::new(MembershipService::new()));
+
+        let connection_service = Arc::new(RwLock::new(ConnectionService::new(
+            node_meta.clone(),
+            event_loop.clone(),
+        )));
 
         let discovery_service =
             DiscoveryService::new(node_meta.clone(), multicast_addr, event_loop.clone());
 
-        let messaging_service = MessagingService::new();
-        let cluster_service = Arc::new(ClusterService::new());
+        let messaging_service =
+            MessagingService::new(node_meta.clone(), membership_service.clone());
+
+        let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new()));
 
         event_loop
-            .lock()
+            .write()
             .unwrap()
-            .add_listener(cluster_service.clone());
+            .add_listener(membership_service.clone())
+            .unwrap()
+            .add_listener(connection_service.clone())
+            .unwrap()
+            .add_listener(message_dispatcher.clone())
+            .unwrap();
 
         Node {
             meta: node_meta.clone(),
             connection_service,
             discovery_service,
             messaging_service,
-            cluster_service,
+            membership_service,
+            message_dispatcher,
             event_loop,
         }
     }
 
     fn start(&self) {
-        self.connection_service.start();
+        self.connection_service.read().unwrap().start();
         self.discovery_service.start();
 
-        self.event_loop.lock().unwrap().start();
+        self.event_loop.read().unwrap().start();
 
         println!("Node has been started!");
+    }
+
+    fn add_msg_listener<F>(&mut self, f: F) -> Result<(), Box<()>>
+    where
+        F: Fn(Arc<Message>) -> () + 'static + Send + Sync,
+    {
+        match self.message_dispatcher.write().unwrap().add_msg_listener(f) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
+
+    fn subscribe_for_topic(&mut self) -> Result<(), Box<()>> {
+        match self
+            .message_dispatcher
+            .write()
+            .unwrap()
+            .subscribe_for_topic()
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
     }
 }

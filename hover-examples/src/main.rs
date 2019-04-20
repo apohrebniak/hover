@@ -3,6 +3,7 @@ extern crate hover;
 use hover::common::{Address, Message, MessageType};
 use hover::Hover;
 use std::net::Ipv4Addr;
+use std::ops::Deref;
 
 fn main() {
     //create an instance of Hover
@@ -18,24 +19,21 @@ fn main() {
     hover.get_messaging_service();
 
     hover.get_messaging_service().unwrap().send_to_address(
-        Message {
-            correlation: None,
-            return_address: None,
-            r#type: MessageType::REQUEST,
-            payload: Vec::new(),
-        },
+        String::from("Hello Hover!").into_bytes(),
         Address {
             ip: Ipv4Addr::LOCALHOST,
-            port: 17021,
+            port: 6203,
         },
     );
 
-    hover.get_messaging_service().unwrap().broadcast(Message {
-        correlation: None,
-        r#type: MessageType::REQUEST,
-        payload: Vec::new(),
-        return_address: None,
-    });
+    match hover.get_cluster_service() {
+        Ok(s) => {
+            let l = s.read().unwrap().deref().get_members();
+        }
+        Err(_) => {}
+    }
+
+    hover.add_msg_listener(|msg| println!("NEW INCOMING MESSAGE: {:?}", msg));
 
     //don't want to join on something
     //letf multicast and connection threads live on theis own

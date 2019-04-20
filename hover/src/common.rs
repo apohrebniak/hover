@@ -1,14 +1,13 @@
 extern crate serde_json;
-extern crate serde_repr;
 
 use std::net::*;
 
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Eq, Clone)]
 pub struct NodeMeta {
-    pub id: String,
+    pub id: Uuid,
     pub addr: Address,
 }
 
@@ -18,8 +17,7 @@ pub struct Address {
     pub port: u16,
 }
 
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
-#[repr(u8)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 pub enum MessageType {
     REQUEST = 0,
     RESPONSE = 1,
@@ -27,14 +25,13 @@ pub enum MessageType {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 pub struct Message {
-    pub correlation: Option<u32>,
-    pub r#type: MessageType,
+    pub corId: Uuid,
+    pub msg_type: MessageType,
     pub payload: Vec<u8>,
     pub return_address: Option<Address>,
 }
 
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Hash)]
-#[repr(u8)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 enum ConnectionMessageType {
     Try = 0,
     Ok = 1,

@@ -4,14 +4,14 @@ use std::io::Read;
 use std::net::Ipv4Addr;
 use std::net::*;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use serde::{Deserialize, Serialize};
 use socket2::*;
 
 use crate::common::{Address, NodeMeta};
-use crate::events::Event::DiscoveryEvent;
+use crate::events::Event::DiscoveryIn;
 use crate::events::{Event, EventLoop};
 use crate::serialize;
 use crate::service::Service;
@@ -25,14 +25,14 @@ pub struct DiscoveryService {
     running: Arc<AtomicBool>,
     sender_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     handler_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
-    event_loop: Arc<Mutex<EventLoop>>,
+    event_loop: Arc<RwLock<EventLoop>>,
 }
 
 impl DiscoveryService {
     pub fn new(
         local_node_meta: NodeMeta,
         multicast_address: Address,
-        event_loop: Arc<Mutex<EventLoop>>,
+        event_loop: Arc<RwLock<EventLoop>>,
     ) -> DiscoveryService {
         DiscoveryService {
             local_node_meta,
@@ -115,7 +115,7 @@ impl DiscoveryService {
         Ok(thread)
     }
 
-    fn multicast_handler(&self, mut socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
+    fn multicast_handler(&self, socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
         let running_ = self.running.clone();
         let e_loop_ = self.event_loop.clone();
 
@@ -124,18 +124,21 @@ impl DiscoveryService {
                 let mut buff = [0u8; MULTICAST_INPUT_BUFF_SIZE];
 
                 match socket.recv_from(&mut buff) {
-                    Ok((size, sockaddr)) => {
+                    Ok((size, ref sockaddr)) if size > 0 => {
                         println!("received {} bytes", size);
                         match serialize::from_bytes(&buff) {
                             Ok(msg) => {
                                 let event =
                                     self::DiscoveryService::build_discovery_event(&msg, &sockaddr);
-                                e_loop_.lock().unwrap().post_event(event);
+                                e_loop_.write().unwrap().post_event(event);
                             }
                             Err(_) => {}
                         }
                     }
                     Err(_) => eprintln!("Read message via multicast: ERR"),
+                    _ => {
+                        dbg!("Read 0 bytes!");
+                    }
                 }
             }
         });
@@ -147,7 +150,7 @@ impl DiscoveryService {
         let ip = sockaddr.as_inet().map(|i| i.ip().clone()).unwrap();
         let port = sockaddr.as_inet().map(|i| i.port()).unwrap();
 
-        DiscoveryEvent {
+        DiscoveryIn {
             node_meta: msg.node_meta.clone(),
         }
     }
