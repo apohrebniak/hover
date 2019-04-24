@@ -134,10 +134,13 @@ impl Node {
         let discovery_service =
             DiscoveryService::new(node_meta.clone(), multicast_addr, event_loop.clone());
 
-        let messaging_service =
-            MessagingService::new(node_meta.clone(), membership_service.clone());
-
         let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new()));
+
+        let messaging_service = MessagingService::new(
+            node_meta.clone(),
+            membership_service.clone(),
+            message_dispatcher.clone(),
+        );
 
         event_loop
             .write()
