@@ -1,3 +1,4 @@
+extern crate chashmap;
 extern crate socket2;
 extern crate uuid;
 
@@ -11,6 +12,7 @@ use crate::service::Service;
 
 use self::uuid::Uuid;
 use crate::service::cluster_service::MembershipService;
+use chashmap::CHashMap;
 use crossbeam_channel::{Receiver, Sender};
 use socket2::{Domain, SockAddr, Socket, Type};
 use std::error::Error;
@@ -21,12 +23,14 @@ use std::time::Duration;
 
 pub struct MessageDispatcher {
     listeners: Vec<Box<Fn(Arc<Message>) -> () + 'static + Send + Sync>>,
+    resp_callbacks: CHashMap<Uuid, Sender<Arc<Message>>>,
 }
 
 impl MessageDispatcher {
     pub fn new() -> MessageDispatcher {
         MessageDispatcher {
             listeners: Vec::new(),
+            resp_callbacks: CHashMap::new(),
         }
     }
 
@@ -38,12 +42,17 @@ impl MessageDispatcher {
         Ok(())
     }
 
-    fn add_msg_receiver(&self, msg_id: Uuid, sender: Sender<Message>) {
-        println!("RECEIVER ADDED");
+    fn add_resp_callback(&self, msg_id: Uuid, sender: Sender<Arc<Message>>) {
+        match self.resp_callbacks.insert(msg_id, sender) {
+            Some(_) => {
+                println!("[MessageDispatcher]: overrides a resp_callback!");
+            }
+            None => {}
+        }
     }
 
-    fn remove_msg_receiver(&self, msg_id: Uuid) {
-        println!("RECEIVER REMOVED")
+    fn remove_resp_callback(&self, msg_id: Uuid) {
+        self.resp_callbacks.remove(&msg_id);
     }
 
     //TODO: implement
@@ -52,8 +61,24 @@ impl MessageDispatcher {
     }
 
     fn handle_in_message(&self, msg: Arc<Message>) {
+        match msg.msg_type {
+            MessageType::REQUEST => self.handle_request(msg),
+            MessageType::RESPONSE => self.handle_response(msg),
+        }
+    }
+
+    fn handle_request(&self, msg: Arc<Message>) {
         for listener in self.listeners.iter() {
             listener(msg.clone())
+        }
+    }
+
+    fn handle_response(&self, msg: Arc<Message>) {
+        match self.resp_callbacks.remove(&msg.corId) {
+            Some(sender) => {
+                sender.send(msg);
+            }
+            None => {}
         }
     }
 }
@@ -85,6 +110,26 @@ impl MessagingService {
             membership_service,
             message_dispatcher,
         }
+    }
+
+    /**public*/
+    pub fn reply(
+        &self,
+        msg_id: Uuid,
+        payload: Vec<u8>,
+        address: Address,
+    ) -> Result<(), Box<Error>> {
+        let msg = Message {
+            corId: msg_id,
+            return_address: Some(self.local_node.addr.clone()),
+            msg_type: MessageType::RESPONSE,
+            payload,
+        };
+        let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
+
+        self.do_send(msg_bytes, &address)?;
+
+        Ok(())
     }
 
     /**public*/
@@ -123,7 +168,7 @@ impl MessagingService {
         payload: Vec<u8>,
         address: Address,
         timeout: Duration,
-    ) -> Result<Message, Box<Error>> {
+    ) -> Result<Arc<Message>, Box<Error>> {
         let correlation_id = gen_msg_id();
         let msg = Message {
             corId: correlation_id,
@@ -133,53 +178,26 @@ impl MessagingService {
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
 
-        //create channel between receiver and current thread
-        let (s, r): (Sender<Message>, Receiver<Message>) = crossbeam_channel::bounded(1);
-
-        //add message listener for given correlation id
-        self.message_dispatcher
-            .write()
-            .unwrap()
-            .add_msg_receiver(correlation_id, s);
-
-        match self.do_send(msg_bytes, &address) {
-            Err(err) => {
-                self.message_dispatcher
-                    .write()
-                    .unwrap()
-                    .remove_msg_receiver(correlation_id);
-                return Err(err);
-            }
-            Ok(_) => {}
-        }
-
-        //block until received response
-        match r.recv_timeout(timeout) {
-            Ok(response) => {
-                self.message_dispatcher
-                    .write()
-                    .unwrap()
-                    .remove_msg_receiver(correlation_id);
-                Ok(response)
-            }
-            Err(err) => {
-                self.message_dispatcher
-                    .write()
-                    .unwrap()
-                    .remove_msg_receiver(correlation_id);
-                Err(Box::new(err))
-            }
-        }
+        self.do_send_receive(correlation_id, msg_bytes, &address, timeout)
     }
 
     /**public*/
-    pub fn send_to_member_receive(&self, msg: Vec<u8>, member: Member) -> Result<Message, &str> {
-        Ok(Message {
-            corId: gen_msg_id(),
+    pub fn send_to_member_receive(
+        &self,
+        payload: Vec<u8>,
+        member: Member,
+        timeout: Duration,
+    ) -> Result<Arc<Message>, Box<Error>> {
+        let correlation_id = gen_msg_id();
+        let msg = Message {
+            corId: correlation_id,
+            return_address: Some(self.local_node.addr.clone()),
             msg_type: MessageType::REQUEST,
-            payload: Vec::new(),
-            return_address: None,
-        })
+            payload,
+        };
+        let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
+
+        self.do_send_receive(correlation_id, msg_bytes, &member.addr, timeout)
     }
 
     /**public*/
@@ -210,6 +228,54 @@ impl MessagingService {
             },
             Err(err) => Err(Box::new(err)),
         }
+    }
+
+    fn do_send_receive(
+        &self,
+        correlation_id: Uuid,
+        mut bytes: Vec<u8>,
+        addr: &Address,
+        timeout: Duration,
+    ) -> Result<Arc<Message>, Box<Error>> {
+        //create channel between receiver and current thread
+        let (s, r): (Sender<Arc<Message>>, Receiver<Arc<Message>>) = crossbeam_channel::bounded(1);
+
+        //add message listener for given correlation id
+        self.message_dispatcher
+            .write()
+            .unwrap()
+            .add_resp_callback(correlation_id, s);
+
+        match self.do_send(bytes, &addr) {
+            Err(err) => {
+                eprintln!("[MessageSercive]: Error while sending a message!");
+                self.message_dispatcher
+                    .write()
+                    .unwrap()
+                    .remove_resp_callback(correlation_id);
+                return Err(err);
+            }
+            Ok(_) => {}
+        }
+
+        //block until received response
+        return match r.recv_timeout(timeout) {
+            Ok(response) => {
+                self.message_dispatcher
+                    .write()
+                    .unwrap()
+                    .remove_resp_callback(correlation_id);
+                Ok(response)
+            }
+            Err(err) => {
+                eprintln!("[MessageService]: Error while waiting for the response!");
+                self.message_dispatcher
+                    .write()
+                    .unwrap()
+                    .remove_resp_callback(correlation_id);
+                Err(Box::new(err))
+            }
+        };
     }
 }
 

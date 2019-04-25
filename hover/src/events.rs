@@ -12,7 +12,6 @@ pub enum Event {
     Empty,
     DiscoveryIn { node_meta: NodeMeta },
     MessageIn { msg: Arc<Message> },
-    MessageOut { msg: Arc<Message> },
 }
 
 pub struct EventLoop {
