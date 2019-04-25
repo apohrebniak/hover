@@ -28,13 +28,13 @@ impl MembershipService {
     }
 
     fn handle_discovered_node(&self, node: NodeMeta) {
-        println!("Handle discovered node: {:?}", node);
+        println!("[MembershipService]: Handle discovered node: {:?}", node);
     }
 }
 
 impl Service for MembershipService {
     fn start(&self) {
-        dbg!("Cluster service started");
+        println!("[MembershipService]: Membership service started");
     }
 }
 
@@ -44,9 +44,7 @@ impl EventListener for MembershipService {
             Event::DiscoveryIn { node_meta } => {
                 self.handle_discovered_node(node_meta);
             }
-            Event::Empty => {
-                dbg!("Handled an empty event");
-            }
+            Event::Empty => {}
             _ => {}
         }
     }

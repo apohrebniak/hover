@@ -61,7 +61,7 @@ impl DiscoveryService {
         //        set thread handler to service. Service is the thread owner
         self.sender_thread.lock().unwrap().replace(sender_thread);
         self.handler_thread.lock().unwrap().replace(handler_thread);
-        dbg!("Multicast service started");
+        println!("[DiscoveryService]: Discovery service started");
 
         Ok(())
     }
@@ -89,6 +89,7 @@ impl DiscoveryService {
         Ok(socket)
     }
 
+    //TODO: broadcast leaved nodes
     fn join(&self, socket: Socket) -> Result<std::thread::JoinHandle<()>, &str> {
         let running = self.running.clone();
 
@@ -100,15 +101,15 @@ impl DiscoveryService {
         let msg = serialize::to_bytes(&msg).unwrap();
 
         let thread = std::thread::spawn(move || {
-            dbg!("Started sending multicast messages");
+            println!("[DiscoveryService]: Started sending multicast messages");
             while running.load(Ordering::Relaxed) {
                 match socket.send(msg.as_slice()) {
                     Ok(_) => {
-                        dbg!("Sent message to multicast group: OK");
+                        println!("[DiscoveryService]: Sent message to multicast group: OK");
                     }
-                    Err(_) => eprintln!("Sent message to multicast group: ERR"),
+                    Err(_) => eprintln!("[DiscoveryService]: Sent message to multicast group: ERR"),
                 };
-                std::thread::sleep_ms(2000); //TODO: change to interval setting
+                std::thread::sleep_ms(5000); //TODO: change to interval setting
             }
         });
 
@@ -124,21 +125,16 @@ impl DiscoveryService {
                 let mut buff = [0u8; MULTICAST_INPUT_BUFF_SIZE];
 
                 match socket.recv_from(&mut buff) {
-                    Ok((size, ref sockaddr)) if size > 0 => {
-                        println!("received {} bytes", size);
-                        match serialize::from_bytes(&buff) {
-                            Ok(msg) => {
-                                let event =
-                                    self::DiscoveryService::build_discovery_event(&msg, &sockaddr);
-                                e_loop_.write().unwrap().post_event(event);
-                            }
-                            Err(_) => {}
+                    Ok((size, ref sockaddr)) if size > 0 => match serialize::from_bytes(&buff) {
+                        Ok(msg) => {
+                            let event =
+                                self::DiscoveryService::build_discovery_event(&msg, &sockaddr);
+                            e_loop_.write().unwrap().post_event(event);
                         }
-                    }
-                    Err(_) => eprintln!("Read message via multicast: ERR"),
-                    _ => {
-                        dbg!("Read 0 bytes!");
-                    }
+                        Err(_) => {}
+                    },
+                    Err(_) => eprintln!("[DiscoveryService]: Read message via multicast: ERR"),
+                    _ => {}
                 }
             }
         });
@@ -146,6 +142,7 @@ impl DiscoveryService {
         Ok(thread)
     }
 
+    //TODO: leaving
     fn build_discovery_event(msg: &DiscoveryMessage, sockaddr: &SockAddr) -> Event {
         let ip = sockaddr.as_inet().map(|i| i.ip().clone()).unwrap();
         let port = sockaddr.as_inet().map(|i| i.port()).unwrap();

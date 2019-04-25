@@ -147,8 +147,6 @@ impl Node {
             .unwrap()
             .add_listener(membership_service.clone())
             .unwrap()
-            .add_listener(connection_service.clone())
-            .unwrap()
             .add_listener(message_dispatcher.clone())
             .unwrap();
 
@@ -169,7 +167,7 @@ impl Node {
 
         self.event_loop.read().unwrap().start();
 
-        println!("Node has been started!");
+        println!("[Node]: Node has been started!");
     }
 
     fn add_msg_listener<F>(&mut self, f: F) -> Result<(), Box<()>>

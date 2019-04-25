@@ -163,7 +163,6 @@ impl MessagingService {
                 Ok(response)
             }
             Err(err) => {
-                println!("{:?}", err);
                 self.message_dispatcher
                     .write()
                     .unwrap()
@@ -175,7 +174,6 @@ impl MessagingService {
 
     /**public*/
     pub fn send_to_member_receive(&self, msg: Vec<u8>, member: Member) -> Result<Message, &str> {
-        dbg!("send and receive to address");
         Ok(Message {
             corId: gen_msg_id(),
             msg_type: MessageType::REQUEST,
@@ -186,7 +184,6 @@ impl MessagingService {
 
     /**public*/
     pub fn broadcast(&self, msg: Vec<u8>) -> Result<(), &str> {
-        dbg!("Broadcasted");
         Ok(())
     }
 
@@ -197,13 +194,11 @@ impl MessagingService {
         msg: Message,
         addresses: HashSet<Address>,
     ) -> Result<(), &str> {
-        dbg!("multicast to addresses");
         Ok(())
     }
 
     /**public*/
     pub fn multicast_to_members(&self, msg: Message, members: HashSet<Member>) -> Result<(), &str> {
-        dbg!("multicast to members");
         Ok(())
     }
 
@@ -220,7 +215,7 @@ impl MessagingService {
 
 impl Service for MessagingService {
     fn start(&self) {
-        println!("Messaging service started")
+        println!("[MessagingService]: Messaging service started")
     }
 }
 

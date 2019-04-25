@@ -47,7 +47,7 @@ impl ConnectionService {
             .lock()
             .unwrap()
             .replace(thread_handler);
-        dbg!("Connection service started");
+        println!("[ConnectionService]: Connection service started");
     }
 
     fn build_inbound_socket(&self, addr: &Address) -> io::Result<TcpListener> {
@@ -69,23 +69,26 @@ impl ConnectionService {
                         Ok(size) if size > 0 => {
                             match serialize::from_bytes(buff.as_mut_slice()) {
                                 Ok(msg) => {
-                                    println!("Read message: {:?}", msg);
+                                    println!(
+                                        "[ConnectionService]: Has read the message: {:?}",
+                                        msg
+                                    );
                                     let event = Event::MessageIn { msg: Arc::new(msg) };
 
                                     loop_.write().unwrap().post_event(event);
                                 }
                                 Err(_) => {
-                                    eprintln!("Error while reading message structure");
+                                    eprintln!("[ConnectionService]: Error while reading message structure");
                                 }
                             };
                         }
                         Err(_) => {}
                         _ => {
-                            dbg!("Read 0 bytes");
+                            println!("[ConnectionService]: Read 0 bytes");
                         }
                     },
                     Err(_) => {
-                        eprintln!("Error");
+                        eprintln!("[ConnectionService]: Failed to start listener");
                     }
                 }
             }
@@ -98,16 +101,5 @@ impl ConnectionService {
 impl Service for ConnectionService {
     fn start(&self) {
         self.start_inner();
-    }
-}
-
-impl EventListener for ConnectionService {
-    fn on_event(&self, event: Event) {
-        match event {
-            Event::MessageOut { msg } => {
-                println!("Damn Boiii");
-            }
-            _ => {}
-        }
     }
 }
