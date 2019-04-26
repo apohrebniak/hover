@@ -16,18 +16,21 @@ fn main() {
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
 
-    //    hover
-    //        .read().unwrap()
-    //        .get_messaging_service()
-    //        .unwrap()
-    //        .send_to_address_receive(
-    //            String::from("Hello Hover!").into_bytes(),
-    //            Address {
-    //                ip: Ipv4Addr::LOCALHOST,
-    //                port: 6203,
-    //            },
-    //            Duration::new(10, 0),
-    //        ).map(|msg| println!("REPLIED: {:?}", msg)).unwrap();
+//        loop {
+//            hover
+//                .read().unwrap()
+//                .get_messaging_service()
+//                .unwrap()
+//                .send_to_address_receive(
+//                    String::from("Hello Hover!").into_bytes(),
+//                    Address {
+//                        ip: Ipv4Addr::LOCALHOST,
+//                        port: 6203,
+//                    },
+//                    Duration::new(10, 0),
+//                ).map(|msg| println!("REPLIED: {:?}", msg)).unwrap();
+//            std::thread::sleep_ms(3000);
+//        }
     //
     //    let hover_ = hover.clone();
     //
