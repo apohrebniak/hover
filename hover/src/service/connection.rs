@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use self::socket2::Socket;
-use crate::common::{Address, Message, NodeMeta};
+use crate::common::{Address, Message, MessageType, NodeMeta};
 use crate::events::{Event, EventListener, EventLoop};
 use crate::serialize;
 use crate::service::Service;
@@ -75,7 +75,7 @@ impl ConnectionService {
                                     );
                                     let event = Event::MessageIn { msg: Arc::new(msg) };
 
-                                    loop_.write().unwrap().post_event(event);
+                                    loop_.read().unwrap().post_event(event);
                                 }
                                 Err(_) => {
                                     eprintln!("[ConnectionService]: Error while reading message structure");

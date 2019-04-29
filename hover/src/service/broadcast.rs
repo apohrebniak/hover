@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use socket2::*;
 
 use crate::common::{Address, NodeMeta};
-use crate::events::Event::{JoinIn, JoinOut, LeaveIn};
+use crate::events::Event::{JoinIn, JoinOut, LeftIn};
 use crate::events::{Event, EventListener, EventLoop};
 use crate::serialize;
 use crate::service::membership::MembershipService;
@@ -123,7 +123,7 @@ impl BroadcastService {
                 Ok((size, ref sockaddr)) if size > 0 => match serialize::from_bytes(&buff) {
                     Ok(msg) => {
                         let event = self::BroadcastService::build_discovery_event(&msg, &sockaddr);
-                        e_loop_.write().unwrap().post_event(event);
+                        e_loop_.read().unwrap().post_event(event);
                     }
                     Err(_) => {}
                 },
@@ -140,8 +140,12 @@ impl BroadcastService {
         let port = sockaddr.as_inet().map(|i| i.port()).unwrap();
 
         match msg.r#type {
-            DiscoveryMessageType::Joined => JoinIn {node_meta: msg.node_meta.clone()},
-            DiscoveryMessageType::Left => LeaveIn {node_meta: msg.node_meta.clone()},
+            DiscoveryMessageType::Joined => JoinIn {
+                node_meta: msg.node_meta.clone(),
+            },
+            DiscoveryMessageType::Left => LeftIn {
+                node_meta: msg.node_meta.clone(),
+            },
         }
     }
 
@@ -174,7 +178,7 @@ impl EventListener for BroadcastService {
     fn on_event(&self, event: Event) {
         match event {
             Event::JoinOut { node_meta } => self.send_join_message(node_meta),
-            Event::LeaveOut { node_meta } => self.send_leave_message(node_meta),
+            Event::LeftOut { node_meta } => self.send_leave_message(node_meta),
             _ => {}
         }
     }

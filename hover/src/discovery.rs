@@ -40,7 +40,7 @@ impl DiscoveryProvider {
                 .post_event(local_join_event.clone())
                 .unwrap();
 
-            std::thread::sleep_ms(3000);
+            std::thread::sleep_ms(10000); //TODO: make config
         });
 
         self.worker_thread.lock().unwrap().replace(thread);
@@ -51,5 +51,16 @@ impl DiscoveryProvider {
 impl Service for DiscoveryProvider {
     fn start(&self) {
         self.start_inner();
+    }
+}
+
+impl EventListener for DiscoveryProvider {
+    fn on_event(&self, event: Event) {
+        if let Event::MemberLeft { node_meta } = event {
+            self.event_loop
+                .read()
+                .unwrap()
+                .post_event(Event::LeftOut { node_meta });
+        }
     }
 }

@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::common::{Address, Message, NodeMeta};
+use crate::Node;
 use crossbeam_channel::{Receiver, Sender};
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub enum Event {
@@ -14,18 +16,34 @@ pub enum Event {
     JoinOut {
         node_meta: NodeMeta,
     },
-    LeaveOut {
+    LeftOut {
         node_meta: NodeMeta,
     },
     JoinIn {
         node_meta: NodeMeta,
     },
-    LeaveIn {
+    LeftIn {
         node_meta: NodeMeta,
     },
     /**Regular messages*/
     MessageIn {
         msg: Arc<Message>,
+    },
+    ProbeIn {
+        cor_id: Uuid,
+        return_address: Address,
+    },
+    ProbeReqIn {
+        cor_id: Uuid,
+        probe_node: NodeMeta,
+        return_address: Address,
+    },
+    /**Membership events*/
+    MemberAdded {
+        node_meta: NodeMeta,
+    },
+    MemberLeft {
+        node_meta: NodeMeta,
     },
 }
 
@@ -49,9 +67,9 @@ impl EventLoop {
     }
 
     pub fn add_listener(
-        &mut self,
+        &self,
         listener: Arc<RwLock<EventListener + Send + Sync>>,
-    ) -> Result<&mut EventLoop, Box<Error>> {
+    ) -> Result<&EventLoop, Box<Error>> {
         self.listeners.write().unwrap().push(listener.clone());
         Ok((self))
     }

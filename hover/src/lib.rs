@@ -12,13 +12,12 @@ use service::Service;
 
 use crate::common::{Message, NodeMeta};
 use crate::discovery::DiscoveryProvider;
-use crate::events::EventLoop;
+use crate::events::{EventListener, EventLoop};
 use crate::message::MessageDispatcher;
 use core::borrow::{Borrow, BorrowMut};
 use std::error::Error;
 use uuid::Uuid;
 
-mod cluster;
 pub mod common;
 pub mod discovery;
 pub mod events;
@@ -54,9 +53,9 @@ impl Hover {
         }
     }
 
-    pub fn get_messaging_service(&self) -> Result<&MessagingService, &str> {
+    pub fn get_messaging_service(&self) -> Result<Arc<RwLock<MessagingService>>, &str> {
         match self.node {
-            Some(ref node) => Ok(&node.messaging_service),
+            Some(ref node) => Ok(node.messaging_service.clone()),
             None => Err("Node is not initialized!"),
         }
     }
@@ -96,6 +95,19 @@ impl Hover {
             None => Err(Box::new(())),
         }
     }
+
+    pub fn add_event_listener<T>(&self, listener: T) -> Result<&Hover, Box<()>>
+    where
+        T: EventListener + Send + Sync + 'static,
+    {
+        match self.node {
+            Some(ref node) => match node.add_event_listener(listener) {
+                Ok(_) => Ok(self),
+                Err(_) => Err(Box::new(())),
+            },
+            None => Err(Box::new(())),
+        }
+    }
 }
 
 /**Representation of the Hover node*/
@@ -103,7 +115,7 @@ struct Node {
     meta: NodeMeta,
     connection_service: Arc<RwLock<ConnectionService>>,
     broadcast_service: Arc<RwLock<BroadcastService>>,
-    messaging_service: MessagingService,
+    messaging_service: Arc<RwLock<MessagingService>>,
     membership_service: Arc<RwLock<MembershipService>>,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
     discovery_provider: Arc<RwLock<DiscoveryProvider>>,
@@ -127,8 +139,6 @@ impl Node {
 
         let event_loop = Arc::new(RwLock::new(EventLoop::new()));
 
-        let membership_service = Arc::new(RwLock::new(MembershipService::new()));
-
         let connection_service = Arc::new(RwLock::new(ConnectionService::new(
             node_meta.clone(),
             event_loop.clone(),
@@ -140,10 +150,18 @@ impl Node {
             event_loop.clone(),
         )));
 
-        let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new()));
+        let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new(event_loop.clone())));
 
-        let messaging_service =
-            MessagingService::new(node_meta.clone(), message_dispatcher.clone());
+        let messaging_service = Arc::new(RwLock::new(MessagingService::new(
+            node_meta.clone(),
+            message_dispatcher.clone(),
+        )));
+
+        let membership_service = Arc::new(RwLock::new(MembershipService::new(
+            node_meta.clone(),
+            messaging_service.clone(),
+            event_loop.clone(),
+        )));
 
         let discovery_provider = Arc::new(RwLock::new(DiscoveryProvider::new(
             node_meta.clone(),
@@ -159,6 +177,8 @@ impl Node {
             .add_listener(message_dispatcher.clone())
             .unwrap()
             .add_listener(broadcast_service.clone())
+            .unwrap()
+            .add_listener(discovery_provider.clone())
             .unwrap();
 
         Node {
@@ -179,6 +199,7 @@ impl Node {
         self.connection_service.read().unwrap().start();
         self.broadcast_service.read().unwrap().start();
         self.discovery_provider.read().unwrap().start();
+        self.membership_service.read().unwrap().start();
 
         println!("[Node]: Started");
     }
@@ -189,6 +210,17 @@ impl Node {
     {
         match self.message_dispatcher.write().unwrap().add_msg_listener(f) {
             Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
+
+    fn add_event_listener<T>(&self, listener: T) -> Result<(), Box<()>>
+    where
+        T: EventListener + Send + Sync + 'static,
+    {
+        let lis = Arc::new(RwLock::new(listener));
+        match self.event_loop.read() {
+            Ok(l) => l.add_listener(lis).map(|_| ()).map_err(|_| Box::new(())),
             Err(_) => Err(Box::new(())),
         }
     }

@@ -1,11 +1,20 @@
 extern crate hover;
 
 use hover::common::{Address, Message, MessageType};
+use hover::events::{Event, EventListener};
 use hover::Hover;
 use std::net::Ipv4Addr;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+
+struct Foo {}
+
+impl EventListener for Foo {
+    fn on_event(&self, event: Event) {
+        println!("Hello event!");
+    }
+}
 
 fn main() {
     //create an instance of Hover
@@ -15,6 +24,10 @@ fn main() {
     //fully blocking start implementation.
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
+
+    //    let foo = Foo {};
+    //
+    //    hover.write().unwrap().add_event_listener(foo);
 
     //        loop {
     //            hover
