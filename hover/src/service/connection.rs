@@ -47,7 +47,7 @@ impl ConnectionService {
             .lock()
             .unwrap()
             .replace(thread_handler);
-        println!("[ConnectionService]: Connection service started");
+        println!("[ConnectionService]: Started");
     }
 
     fn build_inbound_socket(&self, addr: &Address) -> io::Result<TcpListener> {

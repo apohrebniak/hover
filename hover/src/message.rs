@@ -11,7 +11,7 @@ use crate::serialize;
 use crate::service::Service;
 
 use self::uuid::Uuid;
-use crate::service::cluster_service::MembershipService;
+use crate::service::membership::MembershipService;
 use chashmap::CHashMap;
 use crossbeam_channel::{Receiver, Sender};
 use socket2::{Domain, SockAddr, Socket, Type};
@@ -95,19 +95,16 @@ impl EventListener for MessageDispatcher {
 /**Service for sending messages across cluster.*/
 pub struct MessagingService {
     local_node: NodeMeta,
-    membership_service: Arc<RwLock<MembershipService>>,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
 }
 
 impl MessagingService {
     pub fn new(
         local_node: NodeMeta,
-        membership_service: Arc<RwLock<MembershipService>>,
         message_dispatcher: Arc<RwLock<MessageDispatcher>>,
     ) -> MessagingService {
         MessagingService {
             local_node,
-            membership_service,
             message_dispatcher,
         }
     }
@@ -206,7 +203,6 @@ impl MessagingService {
     }
 
     /**public*/
-    //TODO: consider subscription topics
     pub fn multicast_to_addresses(
         &self,
         msg: Message,

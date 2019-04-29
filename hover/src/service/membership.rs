@@ -27,8 +27,12 @@ impl MembershipService {
         None
     }
 
-    fn handle_discovered_node(&self, node: NodeMeta) {
-        println!("[MembershipService]: Handle discovered node: {:?}", node);
+    fn handle_joined_node(&self, node: NodeMeta) {
+        println!("[MembershipService]: Handled joined node: {:?}", node);
+    }
+
+    fn handle_left_node(&self, node: NodeMeta) {
+        println!("[MembershipService]: Handled left node: {:?}", node);
     }
 }
 
@@ -41,11 +45,17 @@ impl Service for MembershipService {
 impl EventListener for MembershipService {
     fn on_event(&self, event: Event) {
         match event {
-            Event::DiscoveryIn { node_meta } => {
-                self.handle_discovered_node(node_meta);
+            Event::JoinIn { node_meta } => {
+                self.handle_joined_node(node_meta);
             }
-            Event::Empty => {}
+            Event::LeaveIn { node_meta } => {
+                self.handle_left_node(node_meta);
+            }
             _ => {}
         }
     }
 }
+
+// react on ping
+//react on ping-req
+//add message service

@@ -10,8 +10,23 @@ use crossbeam_channel::{Receiver, Sender};
 #[derive(Clone)]
 pub enum Event {
     Empty,
-    DiscoveryIn { node_meta: NodeMeta },
-    MessageIn { msg: Arc<Message> },
+    /**Discovery messages*/
+    JoinOut {
+        node_meta: NodeMeta,
+    },
+    LeaveOut {
+        node_meta: NodeMeta,
+    },
+    JoinIn {
+        node_meta: NodeMeta,
+    },
+    LeaveIn {
+        node_meta: NodeMeta,
+    },
+    /**Regular messages*/
+    MessageIn {
+        msg: Arc<Message>,
+    },
 }
 
 pub struct EventLoop {
