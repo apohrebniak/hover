@@ -1,6 +1,6 @@
-pub mod cluster_service;
-pub mod connection_service;
-pub mod discovery_service;
+pub mod broadcast;
+pub mod connection;
+pub mod membership;
 
 /**Common trait for all runnable services*/
 pub trait Service {

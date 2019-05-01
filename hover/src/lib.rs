@@ -5,20 +5,21 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use common::Address;
 use message::MessagingService;
-use service::cluster_service::MembershipService;
-use service::connection_service::ConnectionService;
-use service::discovery_service::DiscoveryService;
+use service::broadcast::BroadcastService;
+use service::connection::ConnectionService;
+use service::membership::MembershipService;
 use service::Service;
 
 use crate::common::{Message, NodeMeta};
-use crate::events::EventLoop;
+use crate::discovery::DiscoveryProvider;
+use crate::events::{EventListener, EventLoop};
 use crate::message::MessageDispatcher;
 use core::borrow::{Borrow, BorrowMut};
 use std::error::Error;
 use uuid::Uuid;
 
-mod cluster;
 pub mod common;
+pub mod discovery;
 pub mod events;
 pub mod message;
 pub mod serialize;
@@ -52,9 +53,9 @@ impl Hover {
         }
     }
 
-    pub fn get_messaging_service(&self) -> Result<&MessagingService, &str> {
+    pub fn get_messaging_service(&self) -> Result<Arc<RwLock<MessagingService>>, &str> {
         match self.node {
-            Some(ref node) => Ok(&node.messaging_service),
+            Some(ref node) => Ok(node.messaging_service.clone()),
             None => Err("Node is not initialized!"),
         }
     }
@@ -94,16 +95,30 @@ impl Hover {
             None => Err(Box::new(())),
         }
     }
+
+    pub fn add_event_listener<T>(&self, listener: T) -> Result<&Hover, Box<()>>
+    where
+        T: EventListener + Send + Sync + 'static,
+    {
+        match self.node {
+            Some(ref node) => match node.add_event_listener(listener) {
+                Ok(_) => Ok(self),
+                Err(_) => Err(Box::new(())),
+            },
+            None => Err(Box::new(())),
+        }
+    }
 }
 
 /**Representation of the Hover node*/
 struct Node {
     meta: NodeMeta,
     connection_service: Arc<RwLock<ConnectionService>>,
-    discovery_service: DiscoveryService,
-    messaging_service: MessagingService,
+    broadcast_service: Arc<RwLock<BroadcastService>>,
+    messaging_service: Arc<RwLock<MessagingService>>,
     membership_service: Arc<RwLock<MembershipService>>,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+    discovery_provider: Arc<RwLock<DiscoveryProvider>>,
     event_loop: Arc<RwLock<EventLoop>>,
 }
 
@@ -124,23 +139,35 @@ impl Node {
 
         let event_loop = Arc::new(RwLock::new(EventLoop::new()));
 
-        let membership_service = Arc::new(RwLock::new(MembershipService::new()));
-
         let connection_service = Arc::new(RwLock::new(ConnectionService::new(
             node_meta.clone(),
             event_loop.clone(),
         )));
 
-        let discovery_service =
-            DiscoveryService::new(node_meta.clone(), multicast_addr, event_loop.clone());
+        let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
+            node_meta.clone(),
+            multicast_addr,
+            event_loop.clone(),
+        )));
 
-        let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new()));
+        let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new(event_loop.clone())));
 
-        let messaging_service = MessagingService::new(
+        let messaging_service = Arc::new(RwLock::new(MessagingService::new(
+            node_meta.clone(),
+            message_dispatcher.clone(),
+        )));
+
+        let membership_service = Arc::new(RwLock::new(MembershipService::new(
+            node_meta.clone(),
+            messaging_service.clone(),
+            event_loop.clone(),
+        )));
+
+        let discovery_provider = Arc::new(RwLock::new(DiscoveryProvider::new(
             node_meta.clone(),
             membership_service.clone(),
-            message_dispatcher.clone(),
-        );
+            event_loop.clone(),
+        )));
 
         event_loop
             .write()
@@ -148,26 +175,33 @@ impl Node {
             .add_listener(membership_service.clone())
             .unwrap()
             .add_listener(message_dispatcher.clone())
+            .unwrap()
+            .add_listener(broadcast_service.clone())
+            .unwrap()
+            .add_listener(discovery_provider.clone())
             .unwrap();
 
         Node {
             meta: node_meta.clone(),
             connection_service,
-            discovery_service,
+            broadcast_service,
             messaging_service,
             membership_service,
             message_dispatcher,
+            discovery_provider,
             event_loop,
         }
     }
 
     fn start(&self) {
-        self.connection_service.read().unwrap().start();
-        self.discovery_service.start();
-
         self.event_loop.read().unwrap().start();
 
-        println!("[Node]: Node has been started!");
+        self.connection_service.read().unwrap().start();
+        self.broadcast_service.read().unwrap().start();
+        self.discovery_provider.read().unwrap().start();
+        self.membership_service.read().unwrap().start();
+
+        println!("[Node]: Started");
     }
 
     fn add_msg_listener<F>(&mut self, f: F) -> Result<(), Box<()>>
@@ -176,6 +210,17 @@ impl Node {
     {
         match self.message_dispatcher.write().unwrap().add_msg_listener(f) {
             Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
+
+    fn add_event_listener<T>(&self, listener: T) -> Result<(), Box<()>>
+    where
+        T: EventListener + Send + Sync + 'static,
+    {
+        let lis = Arc::new(RwLock::new(listener));
+        match self.event_loop.read() {
+            Ok(l) => l.add_listener(lis).map(|_| ()).map_err(|_| Box::new(())),
             Err(_) => Err(Box::new(())),
         }
     }

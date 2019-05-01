@@ -4,14 +4,14 @@ extern crate uuid;
 
 use std::collections::HashSet;
 
-use crate::cluster::Member;
-use crate::common::{Address, Message, MessageType, NodeMeta};
-use crate::events::{Event, EventListener};
+use crate::common::{Address, Message, MessageType, NodeMeta, ProbeReqPayload};
+use crate::events::{Event, EventListener, EventLoop};
 use crate::serialize;
 use crate::service::Service;
 
 use self::uuid::Uuid;
-use crate::service::cluster_service::MembershipService;
+use crate::events::Event::{ProbeIn, ProbeReqIn};
+use crate::service::membership::MembershipService;
 use chashmap::CHashMap;
 use crossbeam_channel::{Receiver, Sender};
 use socket2::{Domain, SockAddr, Socket, Type};
@@ -24,13 +24,15 @@ use std::time::Duration;
 pub struct MessageDispatcher {
     listeners: Vec<Box<Fn(Arc<Message>) -> () + 'static + Send + Sync>>,
     resp_callbacks: CHashMap<Uuid, Sender<Arc<Message>>>,
+    event_loop: Arc<RwLock<EventLoop>>,
 }
 
 impl MessageDispatcher {
-    pub fn new() -> MessageDispatcher {
+    pub fn new(event_loop: Arc<RwLock<EventLoop>>) -> MessageDispatcher {
         MessageDispatcher {
             listeners: Vec::new(),
             resp_callbacks: CHashMap::new(),
+            event_loop,
         }
     }
 
@@ -62,8 +64,10 @@ impl MessageDispatcher {
 
     fn handle_in_message(&self, msg: Arc<Message>) {
         match msg.msg_type {
-            MessageType::REQUEST => self.handle_request(msg),
-            MessageType::RESPONSE => self.handle_response(msg),
+            MessageType::Request => self.handle_request(msg),
+            MessageType::Response => self.handle_response(msg),
+            MessageType::Probe => self.send_event(self.build_probe_in_event(msg)),
+            MessageType::ProbeReq => self.send_event(self.build_probe_req_in_event(msg)),
         }
     }
 
@@ -74,11 +78,33 @@ impl MessageDispatcher {
     }
 
     fn handle_response(&self, msg: Arc<Message>) {
-        match self.resp_callbacks.remove(&msg.corId) {
+        match self.resp_callbacks.remove(&msg.cor_id) {
             Some(sender) => {
                 sender.send(msg);
             }
             None => {}
+        }
+    }
+
+    fn send_event(&self, event: Event) {
+        self.event_loop.read().unwrap().post_event(event);
+    }
+
+    fn build_probe_in_event(&self, msg: Arc<Message>) -> Event {
+        ProbeIn {
+            cor_id: msg.cor_id.clone(),
+            return_address: msg.return_address.clone().unwrap(),
+        }
+    }
+
+    fn build_probe_req_in_event(&self, msg: Arc<Message>) -> Event {
+        let probe_payload: ProbeReqPayload =
+            serialize::from_bytes(msg.payload.clone().as_slice()).unwrap();
+
+        ProbeReqIn {
+            cor_id: msg.cor_id.clone(),
+            probe_node: probe_payload.node,
+            return_address: msg.return_address.clone().unwrap(),
         }
     }
 }
@@ -95,19 +121,16 @@ impl EventListener for MessageDispatcher {
 /**Service for sending messages across cluster.*/
 pub struct MessagingService {
     local_node: NodeMeta,
-    membership_service: Arc<RwLock<MembershipService>>,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
 }
 
 impl MessagingService {
     pub fn new(
         local_node: NodeMeta,
-        membership_service: Arc<RwLock<MembershipService>>,
         message_dispatcher: Arc<RwLock<MessageDispatcher>>,
     ) -> MessagingService {
         MessagingService {
             local_node,
-            membership_service,
             message_dispatcher,
         }
     }
@@ -120,9 +143,9 @@ impl MessagingService {
         address: Address,
     ) -> Result<(), Box<Error>> {
         let msg = Message {
-            corId: msg_id,
+            cor_id: msg_id,
             return_address: Some(self.local_node.addr.clone()),
-            msg_type: MessageType::RESPONSE,
+            msg_type: MessageType::Response,
             payload,
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
@@ -134,10 +157,20 @@ impl MessagingService {
 
     /**public*/
     pub fn send_to_address(&self, payload: Vec<u8>, address: Address) -> Result<(), Box<Error>> {
+        self.send_to_address_type(payload, address, MessageType::Request)
+    }
+
+    /**public*/
+    pub fn send_to_address_type(
+        &self,
+        payload: Vec<u8>,
+        address: Address,
+        msg_type: MessageType,
+    ) -> Result<(), Box<Error>> {
         let msg = Message {
-            corId: gen_msg_id(),
+            cor_id: gen_msg_id(),
             return_address: Some(self.local_node.addr.clone()),
-            msg_type: MessageType::REQUEST,
+            msg_type,
             payload,
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
@@ -148,11 +181,21 @@ impl MessagingService {
     }
 
     /**public*/
-    pub fn send_to_member(&self, payload: Vec<u8>, member: Member) -> Result<(), Box<Error>> {
+    pub fn send_to_member(&self, payload: Vec<u8>, member: &NodeMeta) -> Result<(), Box<Error>> {
+        self.send_to_member_type(payload, member, MessageType::Request)
+    }
+
+    /**public*/
+    pub fn send_to_member_type(
+        &self,
+        payload: Vec<u8>,
+        member: &NodeMeta,
+        msg_type: MessageType,
+    ) -> Result<(), Box<Error>> {
         let msg = Message {
-            corId: gen_msg_id(),
+            cor_id: gen_msg_id(),
             return_address: Some(self.local_node.addr.clone()),
-            msg_type: MessageType::REQUEST,
+            msg_type,
             payload,
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
@@ -169,11 +212,22 @@ impl MessagingService {
         address: Address,
         timeout: Duration,
     ) -> Result<Arc<Message>, Box<Error>> {
+        self.send_to_address_receive_type(payload, address, MessageType::Request, timeout)
+    }
+
+    /**public*/
+    pub fn send_to_address_receive_type(
+        &self,
+        payload: Vec<u8>,
+        address: Address,
+        msg_type: MessageType,
+        timeout: Duration,
+    ) -> Result<Arc<Message>, Box<Error>> {
         let correlation_id = gen_msg_id();
         let msg = Message {
-            corId: correlation_id,
+            cor_id: correlation_id,
             return_address: Some(self.local_node.addr.clone()),
-            msg_type: MessageType::REQUEST,
+            msg_type,
             payload,
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
@@ -185,14 +239,25 @@ impl MessagingService {
     pub fn send_to_member_receive(
         &self,
         payload: Vec<u8>,
-        member: Member,
+        member: &NodeMeta,
+        timeout: Duration,
+    ) -> Result<Arc<Message>, Box<Error>> {
+        self.send_to_member_receive_type(payload, member, MessageType::Request, timeout)
+    }
+
+    /**public*/
+    pub fn send_to_member_receive_type(
+        &self,
+        payload: Vec<u8>,
+        member: &NodeMeta,
+        msg_type: MessageType,
         timeout: Duration,
     ) -> Result<Arc<Message>, Box<Error>> {
         let correlation_id = gen_msg_id();
         let msg = Message {
-            corId: correlation_id,
+            cor_id: correlation_id,
             return_address: Some(self.local_node.addr.clone()),
-            msg_type: MessageType::REQUEST,
+            msg_type,
             payload,
         };
         let mut msg_bytes = serialize::to_bytes(&msg).unwrap();
@@ -206,7 +271,6 @@ impl MessagingService {
     }
 
     /**public*/
-    //TODO: consider subscription topics
     pub fn multicast_to_addresses(
         &self,
         msg: Message,
@@ -216,7 +280,11 @@ impl MessagingService {
     }
 
     /**public*/
-    pub fn multicast_to_members(&self, msg: Message, members: HashSet<Member>) -> Result<(), &str> {
+    pub fn multicast_to_members(
+        &self,
+        msg: Message,
+        members: HashSet<NodeMeta>,
+    ) -> Result<(), &str> {
         Ok(())
     }
 
