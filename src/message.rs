@@ -3,23 +3,24 @@ extern crate socket2;
 extern crate uuid;
 
 use std::collections::HashSet;
-
-use crate::common::{Address, Message, MessageType, NodeMeta, ProbeReqPayload};
-use crate::events::{Event, EventListener, EventLoop};
-use crate::serialize;
-use crate::service::Service;
-
-use self::uuid::Uuid;
-use crate::events::Event::{ProbeIn, ProbeReqIn};
-use crate::service::membership::MembershipService;
-use chashmap::CHashMap;
-use crossbeam_channel::{Receiver, Sender};
-use socket2::{Domain, SockAddr, Socket, Type};
 use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+
+use chashmap::CHashMap;
+use crossbeam_channel::{Receiver, Sender};
+use socket2::{Domain, SockAddr, Socket, Type};
+
+use crate::common::{Address, BroadcastPayload, Message, MessageType, NodeMeta, ProbeReqPayload};
+use crate::events::Event::{BroadcastIn, ProbeIn, ProbeReqIn};
+use crate::events::{Event, EventListener, EventLoop};
+use crate::serialize;
+use crate::service::membership::MembershipService;
+use crate::service::Service;
+
+use self::uuid::Uuid;
 
 pub struct MessageDispatcher {
     listeners: Vec<Box<Fn(Arc<Message>) -> () + 'static + Send + Sync>>,
@@ -68,6 +69,7 @@ impl MessageDispatcher {
             MessageType::Response => self.handle_response(msg),
             MessageType::Probe => self.send_event(self.build_probe_in_event(msg)),
             MessageType::ProbeReq => self.send_event(self.build_probe_req_in_event(msg)),
+            MessageType::Broadcast => self.send_event(self.build_broadcast_in_event(msg)),
         }
     }
 
@@ -105,6 +107,15 @@ impl MessageDispatcher {
             cor_id: msg.cor_id.clone(),
             probe_node: probe_payload.node,
             return_address: msg.return_address.clone().unwrap(),
+        }
+    }
+
+    fn build_broadcast_in_event(&self, msg: Arc<Message>) -> Event {
+        let broadcast_payload: BroadcastPayload =
+            serialize::from_bytes(msg.payload.clone().as_slice()).unwrap();
+
+        BroadcastIn {
+            payload: broadcast_payload,
         }
     }
 }

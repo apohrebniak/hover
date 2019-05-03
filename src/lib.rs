@@ -86,16 +86,6 @@ impl Hover {
         }
     }
 
-    pub fn subscribe_for_topic(&mut self) -> Result<&Hover, Box<()>> {
-        match self.node {
-            Some(ref mut n) => match n.subscribe_for_topic() {
-                Ok(_) => Ok(self),
-                Err(_) => Err(Box::new(())),
-            },
-            None => Err(Box::new(())),
-        }
-    }
-
     pub fn add_event_listener<T>(&self, listener: T) -> Result<&Hover, Box<()>>
     where
         T: EventListener + Send + Sync + 'static,

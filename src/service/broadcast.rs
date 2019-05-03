@@ -1,3 +1,5 @@
+extern crate chashmap;
+extern crate rand;
 extern crate socket2;
 
 use std::io::Read;
@@ -10,13 +12,17 @@ use std::thread::JoinHandle;
 use serde::{Deserialize, Serialize};
 use socket2::*;
 
-use crate::common::{Address, NodeMeta};
+use self::rand::seq::{IteratorRandom, SliceRandom};
+use crate::common::{Address, BroadcastPayload, MessageType, NodeMeta};
 use crate::events::Event::{JoinIn, JoinOut, LeftIn};
 use crate::events::{Event, EventListener, EventLoop};
+use crate::message::MessagingService;
 use crate::serialize;
 use crate::service::membership::MembershipService;
 use crate::service::Service;
 use crossbeam_channel::{Receiver, Sender};
+use std::collections::btree_set::BTreeSet;
+use uuid::Uuid;
 
 const MULTICAST_INPUT_BUFF_SIZE: usize = 256;
 
@@ -179,6 +185,12 @@ impl EventListener for BroadcastService {
         match event {
             Event::JoinOut { node_meta } => self.send_join_message(node_meta),
             Event::LeftOut { node_meta } => self.send_leave_message(node_meta),
+            Event::BroadcastIn { payload } => {
+                //put to channel
+            }
+            Event::BroadcastOut { payload } => {
+                //put to channel
+            }
             _ => {}
         }
     }
@@ -196,4 +208,118 @@ enum DiscoveryMessageType {
 struct DiscoveryMessage {
     r#type: DiscoveryMessageType,
     node_meta: NodeMeta,
+}
+
+/**Gossip protocol implementation and process*/
+struct GossipProtocol {
+    buffer: chashmap::CHashMap<Uuid, BufferedBroadcast>,
+    buffer_keys: RwLock<Vec<Uuid>>,
+    membership_service: Arc<RwLock<MembershipService>>,
+    messaging_service: Arc<RwLock<MessagingService>>,
+    event_loop: Arc<RwLock<EventLoop>>,
+}
+
+impl GossipProtocol {
+    fn new(
+        membership_service: Arc<RwLock<MembershipService>>,
+        messaging_service: Arc<RwLock<MessagingService>>,
+        event_loop: Arc<RwLock<EventLoop>>,
+    ) -> GossipProtocol {
+        GossipProtocol {
+            buffer: chashmap::CHashMap::new(),
+            buffer_keys: RwLock::new(Vec::new()),
+            membership_service,
+            messaging_service,
+            event_loop,
+        }
+    }
+
+    fn start(&self) {
+        let mut rng = &mut rand::thread_rng();
+
+        loop {
+            let buffered_broadcast = self
+                .buffer_keys
+                .read()
+                .unwrap()
+                .choose(&mut rng)
+                .and_then(|key| self.buffer.get_mut(key))
+                .map(|mut f| {
+                    f.ttl -= 1;
+                    f
+                })
+                .unwrap();
+
+            let bytes_to_broadcast = serialize::to_bytes(&buffered_broadcast.payload).unwrap();
+
+            let peers: Vec<NodeMeta> = self
+                .membership_service
+                .read()
+                .map(|ms| ms.get_members())
+                .unwrap()
+                .choose_multiple(&mut rng, 2)
+                .cloned()
+                .collect(); //TODO: aaaaaaaaa
+
+            for peer in peers.iter() {
+                self.messaging_service
+                    .read()
+                    .unwrap()
+                    .send_to_member_type(bytes_to_broadcast.clone(), peer, MessageType::Broadcast)
+                    .unwrap();
+            }
+
+            self.buffer.retain(|_, value| value.ttl > -10); //TODO
+            self.buffer_keys
+                .write()
+                .unwrap()
+                .retain(|key| self.buffer.contains_key(key));
+
+            std::thread::sleep_ms(1000);
+        }
+    }
+
+    //put message into buffer
+    fn send_new_broadcast(&self, payload: Vec<u8>) {
+        let broadcast_payload = BroadcastPayload {
+            id: uuid::Uuid::new_v4(),
+            payload,
+        };
+
+        self.add_to_message_buffer(broadcast_payload);
+    }
+
+    fn handle_received_broadcast(&self, payload: BroadcastPayload) {
+        if !self.buffer_contains(&payload) {
+            //TODO: notify handlers
+            self.add_to_message_buffer(payload);
+        }
+    }
+
+    fn add_to_message_buffer(&self, payload: BroadcastPayload) {
+        let key = payload.id.clone();
+
+        let buffered_message = BufferedBroadcast {
+            ttl: get_fanout(),
+            payload,
+        };
+
+        self.buffer.insert_new(key.clone(), buffered_message);
+        if self.buffer.get(&key).is_some() {
+            self.buffer_keys.write().unwrap().push(key)
+        }
+    }
+
+    fn buffer_contains(&self, payload: &BroadcastPayload) -> bool {
+        self.buffer.contains_key(&payload.id)
+    }
+}
+
+fn get_fanout() -> i32 {
+    2 //TODO
+}
+
+struct BufferedBroadcast {
+    ttl: i32,
+    payload: BroadcastPayload,
 }
