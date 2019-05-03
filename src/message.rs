@@ -133,16 +133,19 @@ impl EventListener for MessageDispatcher {
 pub struct MessagingService {
     local_node: NodeMeta,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+    event_loop: Arc<RwLock<EventLoop>>,
 }
 
 impl MessagingService {
     pub fn new(
         local_node: NodeMeta,
         message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+        event_loop: Arc<RwLock<EventLoop>>,
     ) -> MessagingService {
         MessagingService {
             local_node,
             message_dispatcher,
+            event_loop,
         }
     }
 
@@ -277,26 +280,10 @@ impl MessagingService {
     }
 
     /**public*/
-    pub fn broadcast(&self, msg: Vec<u8>) -> Result<(), &str> {
-        Ok(())
-    }
+    pub fn broadcast(&self, bytes: Vec<u8>) -> Result<(), Box<Error>> {
+        let event = Event::BroadcastOut { payload: bytes };
 
-    /**public*/
-    pub fn multicast_to_addresses(
-        &self,
-        msg: Message,
-        addresses: HashSet<Address>,
-    ) -> Result<(), &str> {
-        Ok(())
-    }
-
-    /**public*/
-    pub fn multicast_to_members(
-        &self,
-        msg: Message,
-        members: HashSet<NodeMeta>,
-    ) -> Result<(), &str> {
-        Ok(())
+        self.event_loop.read().unwrap().post_event(event)
     }
 
     fn do_send(&self, mut bytes: Vec<u8>, addr: &Address) -> Result<(), Box<Error>> {

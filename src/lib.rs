@@ -134,17 +134,12 @@ impl Node {
             event_loop.clone(),
         )));
 
-        let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
-            node_meta.clone(),
-            multicast_addr,
-            event_loop.clone(),
-        )));
-
         let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new(event_loop.clone())));
 
         let messaging_service = Arc::new(RwLock::new(MessagingService::new(
             node_meta.clone(),
             message_dispatcher.clone(),
+            event_loop.clone(),
         )));
 
         let membership_service = Arc::new(RwLock::new(MembershipService::new(
@@ -156,6 +151,14 @@ impl Node {
         let discovery_provider = Arc::new(RwLock::new(DiscoveryProvider::new(
             node_meta.clone(),
             membership_service.clone(),
+            event_loop.clone(),
+        )));
+
+        let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
+            node_meta.clone(),
+            multicast_addr,
+            membership_service.clone(),
+            messaging_service.clone(),
             event_loop.clone(),
         )));
 

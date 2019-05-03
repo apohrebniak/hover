@@ -34,6 +34,8 @@ pub struct BroadcastService {
     //multithreaded communication
     sender_channel: Sender<DiscoveryMessage>,
     receiver_channel: Receiver<DiscoveryMessage>,
+    //gossip
+    gossip: Arc<GossipProtocol>,
     event_loop: Arc<RwLock<EventLoop>>,
 }
 
@@ -41,10 +43,20 @@ impl BroadcastService {
     pub fn new(
         local_node_meta: NodeMeta,
         multicast_address: Address,
+        membership_service: Arc<RwLock<MembershipService>>,
+        messaging_service: Arc<RwLock<MessagingService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> BroadcastService {
         let (s, r): (Sender<DiscoveryMessage>, Receiver<DiscoveryMessage>) =
             crossbeam_channel::unbounded();
+
+        let l = event_loop.clone();
+
+        let gossip = Arc::new(GossipProtocol::new(
+            membership_service,
+            messaging_service,
+            event_loop.clone(),
+        ));
 
         BroadcastService {
             multicast_address,
@@ -52,6 +64,7 @@ impl BroadcastService {
             handler_thread: Arc::new(Mutex::new(Option::None)),
             sender_channel: s,
             receiver_channel: r,
+            gossip,
             event_loop,
         }
     }
@@ -185,12 +198,8 @@ impl EventListener for BroadcastService {
         match event {
             Event::JoinOut { node_meta } => self.send_join_message(node_meta),
             Event::LeftOut { node_meta } => self.send_leave_message(node_meta),
-            Event::BroadcastIn { payload } => {
-                //put to channel
-            }
-            Event::BroadcastOut { payload } => {
-                //put to channel
-            }
+            Event::BroadcastIn { payload } => self.gossip.handle_received_broadcast(payload),
+            Event::BroadcastOut { payload } => self.gossip.send_new_broadcast(payload),
             _ => {}
         }
     }

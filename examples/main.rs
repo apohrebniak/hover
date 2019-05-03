@@ -25,6 +25,11 @@ fn main() {
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
 
+    let ms = hover.write().unwrap().get_messaging_service().unwrap();
+    ms.read()
+        .unwrap()
+        .broadcast(String::from("Hello broadcast!").into_bytes());
+
     //    let foo = Foo {};
     //
     //    hover.write().unwrap().add_event_listener(foo);

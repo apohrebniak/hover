@@ -50,7 +50,7 @@ pub enum Event {
         payload: BroadcastPayload,
     },
     BroadcastOut {
-        payload: BroadcastPayload,
+        payload: Vec<u8>,
     },
 }
 
