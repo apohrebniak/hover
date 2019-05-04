@@ -13,7 +13,7 @@ use chashmap::CHashMap;
 use crossbeam_channel::{Receiver, Sender};
 use socket2::{Domain, SockAddr, Socket, Type};
 
-use crate::common::{Address, BroadcastPayload, Message, MessageType, NodeMeta, ProbeReqPayload};
+use crate::common::{Address, BroadcastMessage, Message, MessageType, NodeMeta, ProbeReqPayload};
 use crate::events::Event::{BroadcastIn, ProbeIn, ProbeReqIn};
 use crate::events::{Event, EventListener, EventLoop};
 use crate::serialize;
@@ -111,7 +111,7 @@ impl MessageDispatcher {
     }
 
     fn build_broadcast_in_event(&self, msg: Arc<Message>) -> Event {
-        let broadcast_payload: BroadcastPayload =
+        let broadcast_payload: BroadcastMessage =
             serialize::from_bytes(msg.payload.clone().as_slice()).unwrap();
 
         BroadcastIn {

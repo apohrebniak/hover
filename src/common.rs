@@ -51,7 +51,7 @@ pub struct ProbeReqPayload {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Clone)]
-pub struct BroadcastPayload {
+pub struct BroadcastMessage {
     pub id: Uuid,
     pub payload: Vec<u8>,
 }

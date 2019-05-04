@@ -10,7 +10,7 @@ use service::connection::ConnectionService;
 use service::membership::MembershipService;
 use service::Service;
 
-use crate::common::{Message, NodeMeta};
+use crate::common::{BroadcastMessage, Message, NodeMeta};
 use crate::discovery::DiscoveryProvider;
 use crate::events::{EventListener, EventLoop};
 use crate::message::MessageDispatcher;
@@ -79,6 +79,19 @@ impl Hover {
     {
         match self.node {
             Some(ref mut n) => match n.add_msg_listener(f) {
+                Ok(_) => Ok(self),
+                Err(_) => Err(Box::new(())),
+            },
+            None => Err(Box::new(())),
+        }
+    }
+
+    pub fn add_broadcast_listener<F>(&self, f: F) -> Result<&Hover, Box<()>>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
+        match self.node {
+            Some(ref n) => match n.add_broadcast_listener(f) {
                 Ok(_) => Ok(self),
                 Err(_) => Err(Box::new(())),
             },
@@ -202,6 +215,21 @@ impl Node {
         F: Fn(Arc<Message>) -> () + 'static + Send + Sync,
     {
         match self.message_dispatcher.write().unwrap().add_msg_listener(f) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
+
+    fn add_broadcast_listener<F>(&self, f: F) -> Result<(), Box<()>>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
+        match self
+            .broadcast_service
+            .write()
+            .unwrap()
+            .add_broadcast_listener(f)
+        {
             Ok(_) => Ok(()),
             Err(_) => Err(Box::new(())),
         }
