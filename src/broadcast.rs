@@ -289,7 +289,7 @@ impl GossipProtocol {
                     }
 
                     // decrease ttl of the current message
-                    msg.write().unwrap().rounds -= 1;
+                    msg.write().unwrap().rounds -= 1_i32;
                 }
 
                 self.move_to_keep_buffer();
@@ -337,9 +337,10 @@ impl GossipProtocol {
 
     fn add_to_out_buffer(&self, payload: BroadcastMessage) {
         let key = payload.id.clone();
+        let nodes = self.membership_service.read().unwrap().get_member_count() as isize as f32;
 
         let buffered_message = BufferedBroadcast {
-            rounds: get_rounds_count(10_f32, 2_f32), //TODO config
+            rounds: get_rounds_count(nodes, 2_f32), //TODO config
             send: true,
             payload,
         };
@@ -436,7 +437,7 @@ fn get_rounds_count(nodes: f32, fanout: f32) -> i32 {
     let x: f32 = nodes * prob / (1_f32 - prob);
     let round_count: f32 = 2_f32 * x.ln() / fanout;
 
-    round_count.floor() as i32
+    round_count.floor() as i64 as i32
 }
 
 struct BufferedBroadcast {
