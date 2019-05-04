@@ -9,7 +9,7 @@ use self::socket2::Socket;
 use crate::common::{Address, Message, MessageType, NodeMeta};
 use crate::events::{Event, EventListener, EventLoop};
 use crate::serialize;
-use crate::service::Service;
+
 use std::error::Error;
 use std::io;
 use std::io::Read;
@@ -33,7 +33,7 @@ impl ConnectionService {
         }
     }
 
-    fn start_inner(&self) {
+    pub fn start(&self) {
         let running = self.running.store(true, Ordering::Relaxed);
 
         let tcp_listener = self
@@ -95,11 +95,5 @@ impl ConnectionService {
         });
 
         Ok(thread_handle)
-    }
-}
-
-impl Service for ConnectionService {
-    fn start(&self) {
-        self.start_inner();
     }
 }

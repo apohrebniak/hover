@@ -16,9 +16,8 @@ use socket2::{Domain, SockAddr, Socket, Type};
 use crate::common::{Address, BroadcastMessage, Message, MessageType, NodeMeta, ProbeReqPayload};
 use crate::events::Event::{BroadcastIn, ProbeIn, ProbeReqIn};
 use crate::events::{Event, EventListener, EventLoop};
+use crate::membership::MembershipService;
 use crate::serialize;
-use crate::service::membership::MembershipService;
-use crate::service::Service;
 
 use self::uuid::Uuid;
 
@@ -342,12 +341,6 @@ impl MessagingService {
                 Err(Box::new(err))
             }
         };
-    }
-}
-
-impl Service for MessagingService {
-    fn start(&self) {
-        println!("[MessagingService]: Messaging service started")
     }
 }
 

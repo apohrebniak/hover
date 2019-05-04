@@ -18,10 +18,10 @@ use self::rand::seq::{IteratorRandom, SliceRandom};
 use crate::common::{Address, BroadcastMessage, MessageType, NodeMeta};
 use crate::events::Event::{JoinIn, JoinOut, LeftIn};
 use crate::events::{Event, EventListener, EventLoop};
+use crate::membership::MembershipService;
 use crate::message::MessagingService;
 use crate::serialize;
-use crate::service::membership::MembershipService;
-use crate::service::Service;
+
 use core::borrow::BorrowMut;
 use crossbeam_channel::{Receiver, Sender};
 use std::cell::RefCell;
@@ -75,7 +75,7 @@ impl BroadcastService {
         }
     }
 
-    fn start_inner(&self) -> Result<(), &str> {
+    pub fn start(&self) -> Result<(), &str> {
         let multi_addr = self.multicast_address.ip;
         let multi_port = self.multicast_address.port;
 
@@ -211,12 +211,6 @@ impl BroadcastService {
             Ok(_) => Ok(()),
             Err(_) => Err(Box::new(())),
         }
-    }
-}
-
-impl Service for BroadcastService {
-    fn start(&self) {
-        self.start_inner();
     }
 }
 

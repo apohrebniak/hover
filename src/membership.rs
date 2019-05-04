@@ -9,7 +9,7 @@ use crate::events::Event::{MemberAdded, MemberLeft};
 use crate::events::{Event, EventListener, EventLoop};
 use crate::message::MessagingService;
 use crate::serialize;
-use crate::service::Service;
+
 use chashmap::CHashMap;
 use core::borrow::Borrow;
 use std::error::Error;
@@ -45,6 +45,18 @@ impl MembershipService {
             swim: Arc::new(swim),
             swim_thread: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn start(&self) {
+        let swim_ = self.swim.clone();
+
+        let thread = std::thread::spawn(move || {
+            swim_.start();
+        });
+
+        self.swim_thread.lock().unwrap().replace(thread);
+
+        println!("[MembershipService]: Membership service started");
     }
 
     /**Returns the full copy of the current members state*/
@@ -103,20 +115,6 @@ impl MembershipService {
             }
             _ => {}
         }
-    }
-}
-
-impl Service for MembershipService {
-    fn start(&self) {
-        let swim_ = self.swim.clone();
-
-        let thread = std::thread::spawn(move || {
-            swim_.start();
-        });
-
-        self.swim_thread.lock().unwrap().replace(thread);
-
-        println!("[MembershipService]: Membership service started");
     }
 }
 

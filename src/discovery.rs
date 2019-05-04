@@ -1,7 +1,7 @@
 use crate::common::NodeMeta;
 use crate::events::{Event, EventListener, EventLoop};
-use crate::service::membership::MembershipService;
-use crate::service::Service;
+use crate::membership::MembershipService;
+
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
@@ -27,7 +27,7 @@ impl DiscoveryProvider {
         }
     }
 
-    pub fn start_inner(&self) {
+    pub fn start(&self) {
         let loop_ = self.event_loop.clone();
         let local_join_event = Event::JoinOut {
             node_meta: self.local_node_meta.clone(),
@@ -45,12 +45,6 @@ impl DiscoveryProvider {
 
         self.worker_thread.lock().unwrap().replace(thread);
         println!("[DiscoveryProvider]: Started")
-    }
-}
-
-impl Service for DiscoveryProvider {
-    fn start(&self) {
-        self.start_inner();
     }
 }
 

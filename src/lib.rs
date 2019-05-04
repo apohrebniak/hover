@@ -3,12 +3,11 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 
+use broadcast::BroadcastService;
 use common::Address;
+use connection::ConnectionService;
+use membership::MembershipService;
 use message::MessagingService;
-use service::broadcast::BroadcastService;
-use service::connection::ConnectionService;
-use service::membership::MembershipService;
-use service::Service;
 
 use crate::common::{BroadcastMessage, Message, NodeMeta};
 use crate::discovery::DiscoveryProvider;
@@ -18,12 +17,14 @@ use core::borrow::{Borrow, BorrowMut};
 use std::error::Error;
 use uuid::Uuid;
 
+pub mod broadcast;
 pub mod common;
+pub mod connection;
 pub mod discovery;
 pub mod events;
+pub mod membership;
 pub mod message;
 pub mod serialize;
-pub mod service;
 
 /**Main API for using service*/
 pub struct Hover {
