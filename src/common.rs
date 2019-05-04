@@ -21,6 +21,7 @@ pub enum MessageType {
     Response = 1,
     Probe = 2,
     ProbeReq = 3,
+    Broadcast = 4,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
@@ -47,4 +48,10 @@ struct ConnectionMessage {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 pub struct ProbeReqPayload {
     pub node: NodeMeta,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash, Clone)]
+pub struct BroadcastMessage {
+    pub id: Uuid,
+    pub payload: Vec<u8>,
 }

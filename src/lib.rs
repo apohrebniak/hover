@@ -10,7 +10,7 @@ use service::connection::ConnectionService;
 use service::membership::MembershipService;
 use service::Service;
 
-use crate::common::{Message, NodeMeta};
+use crate::common::{BroadcastMessage, Message, NodeMeta};
 use crate::discovery::DiscoveryProvider;
 use crate::events::{EventListener, EventLoop};
 use crate::message::MessageDispatcher;
@@ -86,9 +86,12 @@ impl Hover {
         }
     }
 
-    pub fn subscribe_for_topic(&mut self) -> Result<&Hover, Box<()>> {
+    pub fn add_broadcast_listener<F>(&self, f: F) -> Result<&Hover, Box<()>>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
         match self.node {
-            Some(ref mut n) => match n.subscribe_for_topic() {
+            Some(ref n) => match n.add_broadcast_listener(f) {
                 Ok(_) => Ok(self),
                 Err(_) => Err(Box::new(())),
             },
@@ -144,17 +147,12 @@ impl Node {
             event_loop.clone(),
         )));
 
-        let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
-            node_meta.clone(),
-            multicast_addr,
-            event_loop.clone(),
-        )));
-
         let message_dispatcher = Arc::new(RwLock::new(MessageDispatcher::new(event_loop.clone())));
 
         let messaging_service = Arc::new(RwLock::new(MessagingService::new(
             node_meta.clone(),
             message_dispatcher.clone(),
+            event_loop.clone(),
         )));
 
         let membership_service = Arc::new(RwLock::new(MembershipService::new(
@@ -166,6 +164,14 @@ impl Node {
         let discovery_provider = Arc::new(RwLock::new(DiscoveryProvider::new(
             node_meta.clone(),
             membership_service.clone(),
+            event_loop.clone(),
+        )));
+
+        let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
+            node_meta.clone(),
+            multicast_addr,
+            membership_service.clone(),
+            messaging_service.clone(),
             event_loop.clone(),
         )));
 
@@ -209,6 +215,21 @@ impl Node {
         F: Fn(Arc<Message>) -> () + 'static + Send + Sync,
     {
         match self.message_dispatcher.write().unwrap().add_msg_listener(f) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
+
+    fn add_broadcast_listener<F>(&self, f: F) -> Result<(), Box<()>>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
+        match self
+            .broadcast_service
+            .write()
+            .unwrap()
+            .add_broadcast_listener(f)
+        {
             Ok(_) => Ok(()),
             Err(_) => Err(Box::new(())),
         }

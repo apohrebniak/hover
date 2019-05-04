@@ -4,7 +4,7 @@ use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-use crate::common::{Address, Message, NodeMeta};
+use crate::common::{Address, BroadcastMessage, Message, NodeMeta};
 use crate::Node;
 use crossbeam_channel::{Receiver, Sender};
 use uuid::Uuid;
@@ -44,6 +44,13 @@ pub enum Event {
     },
     MemberLeft {
         node_meta: NodeMeta,
+    },
+    /**Gossip message in*/
+    BroadcastIn {
+        payload: BroadcastMessage,
+    },
+    BroadcastOut {
+        payload: Vec<u8>,
     },
 }
 

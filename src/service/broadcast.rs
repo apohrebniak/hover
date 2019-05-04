@@ -1,3 +1,5 @@
+extern crate chashmap;
+extern crate rand;
 extern crate socket2;
 
 use std::io::Read;
@@ -10,13 +12,21 @@ use std::thread::JoinHandle;
 use serde::{Deserialize, Serialize};
 use socket2::*;
 
-use crate::common::{Address, NodeMeta};
+use self::chashmap::{ReadGuard, WriteGuard};
+use self::rand::prelude::ThreadRng;
+use self::rand::seq::{IteratorRandom, SliceRandom};
+use crate::common::{Address, BroadcastMessage, MessageType, NodeMeta};
 use crate::events::Event::{JoinIn, JoinOut, LeftIn};
 use crate::events::{Event, EventListener, EventLoop};
+use crate::message::MessagingService;
 use crate::serialize;
 use crate::service::membership::MembershipService;
 use crate::service::Service;
+use core::borrow::BorrowMut;
 use crossbeam_channel::{Receiver, Sender};
+use std::cell::RefCell;
+use std::collections::btree_set::BTreeSet;
+use uuid::Uuid;
 
 const MULTICAST_INPUT_BUFF_SIZE: usize = 256;
 
@@ -25,9 +35,12 @@ pub struct BroadcastService {
     multicast_address: Address,
     sender_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     handler_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
+    gossip_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     //multithreaded communication
     sender_channel: Sender<DiscoveryMessage>,
     receiver_channel: Receiver<DiscoveryMessage>,
+    //gossip
+    gossip: Arc<GossipProtocol>,
     event_loop: Arc<RwLock<EventLoop>>,
 }
 
@@ -35,17 +48,29 @@ impl BroadcastService {
     pub fn new(
         local_node_meta: NodeMeta,
         multicast_address: Address,
+        membership_service: Arc<RwLock<MembershipService>>,
+        messaging_service: Arc<RwLock<MessagingService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> BroadcastService {
         let (s, r): (Sender<DiscoveryMessage>, Receiver<DiscoveryMessage>) =
             crossbeam_channel::unbounded();
 
+        let l = event_loop.clone();
+
+        let gossip = Arc::new(GossipProtocol::new(
+            membership_service,
+            messaging_service,
+            event_loop.clone(),
+        ));
+
         BroadcastService {
             multicast_address,
             sender_thread: Arc::new(Mutex::new(Option::None)),
             handler_thread: Arc::new(Mutex::new(Option::None)),
+            gossip_thread: Arc::new(Mutex::new(Option::None)),
             sender_channel: s,
             receiver_channel: r,
+            gossip,
             event_loop,
         }
     }
@@ -61,6 +86,7 @@ impl BroadcastService {
 
         let sender_thread = self.start_sending(socket_send)?;
         let handler_thread = self.start_listening(socket_receive)?;
+        let gossip_thread = self.start_gossip()?;
 
         //set thread handler to service. Service is the thread owner
         self.sender_thread.lock().unwrap().replace(sender_thread);
@@ -135,6 +161,16 @@ impl BroadcastService {
         Ok(thread)
     }
 
+    fn start_gossip(&self) -> Result<std::thread::JoinHandle<()>, &str> {
+        let gossp_ = self.gossip.clone();
+
+        let thread = std::thread::spawn(move || loop {
+            gossp_.start();
+        });
+
+        Ok(thread)
+    }
+
     fn build_discovery_event(msg: &DiscoveryMessage, sockaddr: &SockAddr) -> Event {
         let ip = sockaddr.as_inet().map(|i| i.ip().clone()).unwrap();
         let port = sockaddr.as_inet().map(|i| i.port()).unwrap();
@@ -166,6 +202,16 @@ impl BroadcastService {
 
         self.sender_channel.send(msg);
     }
+
+    pub fn add_broadcast_listener<F>(&self, f: F) -> Result<(), Box<()>>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
+        match self.gossip.add_listener(f) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Box::new(())),
+        }
+    }
 }
 
 impl Service for BroadcastService {
@@ -179,6 +225,8 @@ impl EventListener for BroadcastService {
         match event {
             Event::JoinOut { node_meta } => self.send_join_message(node_meta),
             Event::LeftOut { node_meta } => self.send_leave_message(node_meta),
+            Event::BroadcastIn { payload } => self.gossip.handle_received_broadcast(payload),
+            Event::BroadcastOut { payload } => self.gossip.send_new_broadcast(payload),
             _ => {}
         }
     }
@@ -196,4 +244,209 @@ enum DiscoveryMessageType {
 struct DiscoveryMessage {
     r#type: DiscoveryMessageType,
     node_meta: NodeMeta,
+}
+
+/**Gossip protocol implementation and process*/
+struct GossipProtocol {
+    listeners: RwLock<Vec<Box<Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync>>>,
+    send_buffer: chashmap::CHashMap<Uuid, Arc<RwLock<BufferedBroadcast>>>,
+    keep_buffer: chashmap::CHashMap<Uuid, Arc<RwLock<BufferedBroadcast>>>,
+    send_keys: RwLock<Vec<Uuid>>,
+    keep_keys: RwLock<Vec<Uuid>>,
+    membership_service: Arc<RwLock<MembershipService>>,
+    messaging_service: Arc<RwLock<MessagingService>>,
+    event_loop: Arc<RwLock<EventLoop>>,
+}
+
+impl GossipProtocol {
+    fn new(
+        membership_service: Arc<RwLock<MembershipService>>,
+        messaging_service: Arc<RwLock<MessagingService>>,
+        event_loop: Arc<RwLock<EventLoop>>,
+    ) -> GossipProtocol {
+        GossipProtocol {
+            listeners: RwLock::new(Vec::new()),
+            send_buffer: chashmap::CHashMap::new(),
+            keep_buffer: chashmap::CHashMap::new(),
+            send_keys: RwLock::new(Vec::new()),
+            keep_keys: RwLock::new(Vec::new()),
+            membership_service,
+            messaging_service,
+            event_loop,
+        }
+    }
+
+    fn start(&self) {
+        let mut rng = &mut rand::thread_rng();
+
+        loop {
+            let buffered_broadcast = self.choose_message_to_broadcast(&mut rng);
+
+            let peer_count = self.membership_service.read().unwrap().get_member_count();
+
+            if peer_count != 0 {
+                if let Some(mut msg) = buffered_broadcast {
+                    {
+                        let payload = &msg.read().unwrap().payload;
+                        let bytes_to_broadcast = serialize::to_bytes(payload).unwrap();
+                        let peers = self.choose_peers_to_broadcast(rng);
+
+                        self.do_broadcast(bytes_to_broadcast, peers);
+                    }
+
+                    // decrease ttl of the current message
+                    msg.write().unwrap().rounds -= 1;
+                }
+
+                self.move_to_keep_buffer();
+                self.remove_from_keep_buffer();
+            }
+
+            std::thread::sleep_ms(1000); //TODO: config
+        }
+    }
+
+    //put message into buffer
+    fn send_new_broadcast(&self, payload: Vec<u8>) {
+        let broadcast_payload = BroadcastMessage {
+            id: uuid::Uuid::new_v4(),
+            payload,
+        };
+
+        self.add_to_out_buffer(broadcast_payload);
+    }
+
+    fn handle_received_broadcast(&self, payload: BroadcastMessage) {
+        if !self.keep_buffer.contains_key(&payload.id)
+            && !self.send_buffer.contains_key(&payload.id)
+        {
+            self.notify_listeners(payload.clone());
+            self.add_to_in_buffer(payload);
+        }
+    }
+
+    fn add_to_in_buffer(&self, payload: BroadcastMessage) {
+        let key = payload.id.clone();
+
+        let buffered_message = BufferedBroadcast {
+            rounds: 0,
+            send: false,
+            payload,
+        };
+
+        self.keep_buffer
+            .insert_new(key.clone(), Arc::new(RwLock::new(buffered_message)));
+        if self.keep_buffer.get(&key).is_some() {
+            self.keep_keys.write().unwrap().push(key)
+        }
+    }
+
+    fn add_to_out_buffer(&self, payload: BroadcastMessage) {
+        let key = payload.id.clone();
+
+        let buffered_message = BufferedBroadcast {
+            rounds: get_rounds_count(10_f32, 2_f32), //TODO config
+            send: true,
+            payload,
+        };
+
+        self.send_buffer
+            .insert_new(key.clone(), Arc::new(RwLock::new(buffered_message)));
+        if self.send_buffer.get(&key).is_some() {
+            self.send_keys.write().unwrap().push(key)
+        }
+    }
+
+    fn choose_peers_to_broadcast(&self, rng: &mut ThreadRng) -> Vec<NodeMeta> {
+        self.membership_service
+            .read()
+            .unwrap()
+            .get_members()
+            .choose_multiple(rng, 2) //TODO: config
+            .cloned()
+            .collect()
+    }
+
+    fn choose_message_to_broadcast(
+        &self,
+        rng: &mut ThreadRng,
+    ) -> Option<ReadGuard<Uuid, Arc<RwLock<BufferedBroadcast>>>> {
+        self.send_keys
+            .read()
+            .unwrap()
+            .choose(rng)
+            .and_then(|key| self.send_buffer.get(key))
+    }
+
+    fn do_broadcast(&self, bytes: Vec<u8>, peers: Vec<NodeMeta>) {
+        for peer in peers.iter() {
+            self.messaging_service.read().unwrap().send_to_member_type(
+                bytes.clone(),
+                peer,
+                MessageType::Broadcast,
+            );
+        }
+    }
+
+    fn move_to_keep_buffer(&self) {
+        for key in self.send_keys.read().unwrap().iter() {
+            if let Some(br) = self.send_buffer.get(key) {
+                if br.read().unwrap().rounds == 0 {
+                    br.write().unwrap().send = false;
+                    self.keep_buffer.insert(key.clone(), br.clone());
+                }
+            }
+        }
+
+        self.send_buffer
+            .retain(|_, value| value.read().unwrap().send);
+        self.send_keys
+            .write()
+            .unwrap()
+            .retain(|key| self.send_buffer.contains_key(key));
+    }
+
+    fn remove_from_keep_buffer(&self) {
+        for key in self.keep_keys.read().unwrap().iter() {
+            if let Some(br) = self.keep_buffer.get(key) {
+                br.write().unwrap().rounds -= 1;
+            }
+        }
+        self.keep_buffer
+            .retain(|_, value| value.read().unwrap().rounds > -10);
+        self.keep_keys
+            .write()
+            .unwrap()
+            .retain(|key| self.keep_buffer.contains_key(key));
+    }
+
+    pub fn add_listener<F>(&self, f: F) -> Result<(), ()>
+    where
+        F: Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync,
+    {
+        self.listeners.write().unwrap().push(Box::new(f));
+        Ok(())
+    }
+
+    fn notify_listeners(&self, payload: BroadcastMessage) {
+        let payload = Arc::new(payload);
+        for listener in self.listeners.read().unwrap().iter() {
+            listener(payload.clone());
+        }
+    }
+}
+
+fn get_rounds_count(nodes: f32, fanout: f32) -> i32 {
+    let prob = 0.99_f32;
+
+    let x: f32 = nodes * prob / (1_f32 - prob);
+    let round_count: f32 = 2_f32 * x.ln() / fanout;
+
+    round_count.floor() as i32
+}
+
+struct BufferedBroadcast {
+    rounds: i32,
+    send: bool,
+    payload: BroadcastMessage,
 }

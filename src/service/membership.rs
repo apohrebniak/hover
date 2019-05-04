@@ -47,6 +47,7 @@ impl MembershipService {
         }
     }
 
+    /**Returns the full copy of the current members state*/
     pub fn get_members(&self) -> Vec<NodeMeta> {
         self.swim.members.clone().read().unwrap().clone()
     }
@@ -69,6 +70,10 @@ impl MembershipService {
             .iter()
             .find(|n| n.addr == *address)
             .map(|n| n.clone())
+    }
+
+    pub fn get_member_count(&self) -> usize {
+        self.swim.members.read().unwrap().len()
     }
 
     fn handle_joined_node(&self, node: NodeMeta) {

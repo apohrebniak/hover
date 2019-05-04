@@ -3,23 +3,24 @@ extern crate socket2;
 extern crate uuid;
 
 use std::collections::HashSet;
-
-use crate::common::{Address, Message, MessageType, NodeMeta, ProbeReqPayload};
-use crate::events::{Event, EventListener, EventLoop};
-use crate::serialize;
-use crate::service::Service;
-
-use self::uuid::Uuid;
-use crate::events::Event::{ProbeIn, ProbeReqIn};
-use crate::service::membership::MembershipService;
-use chashmap::CHashMap;
-use crossbeam_channel::{Receiver, Sender};
-use socket2::{Domain, SockAddr, Socket, Type};
 use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+
+use chashmap::CHashMap;
+use crossbeam_channel::{Receiver, Sender};
+use socket2::{Domain, SockAddr, Socket, Type};
+
+use crate::common::{Address, BroadcastMessage, Message, MessageType, NodeMeta, ProbeReqPayload};
+use crate::events::Event::{BroadcastIn, ProbeIn, ProbeReqIn};
+use crate::events::{Event, EventListener, EventLoop};
+use crate::serialize;
+use crate::service::membership::MembershipService;
+use crate::service::Service;
+
+use self::uuid::Uuid;
 
 pub struct MessageDispatcher {
     listeners: Vec<Box<Fn(Arc<Message>) -> () + 'static + Send + Sync>>,
@@ -68,6 +69,7 @@ impl MessageDispatcher {
             MessageType::Response => self.handle_response(msg),
             MessageType::Probe => self.send_event(self.build_probe_in_event(msg)),
             MessageType::ProbeReq => self.send_event(self.build_probe_req_in_event(msg)),
+            MessageType::Broadcast => self.send_event(self.build_broadcast_in_event(msg)),
         }
     }
 
@@ -107,6 +109,15 @@ impl MessageDispatcher {
             return_address: msg.return_address.clone().unwrap(),
         }
     }
+
+    fn build_broadcast_in_event(&self, msg: Arc<Message>) -> Event {
+        let broadcast_payload: BroadcastMessage =
+            serialize::from_bytes(msg.payload.clone().as_slice()).unwrap();
+
+        BroadcastIn {
+            payload: broadcast_payload,
+        }
+    }
 }
 
 impl EventListener for MessageDispatcher {
@@ -122,16 +133,19 @@ impl EventListener for MessageDispatcher {
 pub struct MessagingService {
     local_node: NodeMeta,
     message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+    event_loop: Arc<RwLock<EventLoop>>,
 }
 
 impl MessagingService {
     pub fn new(
         local_node: NodeMeta,
         message_dispatcher: Arc<RwLock<MessageDispatcher>>,
+        event_loop: Arc<RwLock<EventLoop>>,
     ) -> MessagingService {
         MessagingService {
             local_node,
             message_dispatcher,
+            event_loop,
         }
     }
 
@@ -266,26 +280,10 @@ impl MessagingService {
     }
 
     /**public*/
-    pub fn broadcast(&self, msg: Vec<u8>) -> Result<(), &str> {
-        Ok(())
-    }
+    pub fn broadcast(&self, bytes: Vec<u8>) -> Result<(), Box<Error>> {
+        let event = Event::BroadcastOut { payload: bytes };
 
-    /**public*/
-    pub fn multicast_to_addresses(
-        &self,
-        msg: Message,
-        addresses: HashSet<Address>,
-    ) -> Result<(), &str> {
-        Ok(())
-    }
-
-    /**public*/
-    pub fn multicast_to_members(
-        &self,
-        msg: Message,
-        members: HashSet<NodeMeta>,
-    ) -> Result<(), &str> {
-        Ok(())
+        self.event_loop.read().unwrap().post_event(event)
     }
 
     fn do_send(&self, mut bytes: Vec<u8>, addr: &Address) -> Result<(), Box<Error>> {
