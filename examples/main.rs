@@ -1,5 +1,6 @@
 extern crate hover;
 
+use bincode::{deserialize, serialize};
 use hover::common::{Address, Message, MessageType};
 use hover::events::{Event, EventListener};
 use hover::Hover;
@@ -25,50 +26,27 @@ fn main() {
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
 
-    let ms = hover.write().unwrap().get_messaging_service().unwrap();
-    ms.read()
+    let value = Arc::new(RwLock::new(42_f32));
+
+    hover
+        .write()
         .unwrap()
-        .broadcast(String::from("Hello broadcast!").into_bytes());
+        .get_messaging_service()
+        .unwrap()
+        .read()
+        .unwrap()
+        .broadcast(serialize(&*value.read().unwrap()).unwrap());
 
-    //    let foo = Foo {};
-    //
-    //    hover.write().unwrap().add_event_listener(foo);
+    let v_ = value.clone();
+    hover.write().unwrap().add_broadcast_listener(move |msg| {
+        let in_: f32 = deserialize(msg.payload.as_slice()).unwrap();
+        let l = v_.read().unwrap().clone();
+        *v_.write().unwrap() = (l + in_) / 2_f32;
+    });
 
-    //        loop {
-    //            hover
-    //                .read().unwrap()
-    //                .get_messaging_service()
-    //                .unwrap()
-    //                .send_to_address_receive(
-    //                    String::from("Hello Hover!").into_bytes(),
-    //                    Address {
-    //                        ip: Ipv4Addr::LOCALHOST,
-    //                        port: 6203,
-    //                    },
-    //                    Duration::new(10, 0),
-    //                ).map(|msg| println!("REPLIED: {:?}", msg)).unwrap();
-    //            std::thread::sleep_ms(3000);
-    //        }
-    //
-    //    let hover_ = hover.clone();
-    //
-    //    hover.write().unwrap().add_msg_listener(move |msg| {
-    //        match &msg.clone().return_address {
-    //            Some(addr) => {
-    //                hover_.read().unwrap().get_messaging_service().unwrap().reply(
-    //                    msg.corId.clone(),
-    //                    String::from("Bye Hover!").into_bytes(),
-    //                    Address {
-    //                        ip: addr.ip,
-    //                        port: addr.port,
-    //                    },
-    //                );
-    //            }
-    //            _ => {}
-    //        }
-    //    });
+    loop {
+        println!("----AVERAGE VALUE={}", value.read().unwrap());
 
-    //don't want to join on something
-    //letf multicast and connection threads live on theis own
-    std::thread::sleep_ms(600000);
+        std::thread::sleep_ms(500);
+    }
 }
