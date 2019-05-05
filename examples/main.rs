@@ -20,13 +20,14 @@ impl EventListener for Foo {
 fn main() {
     //create an instance of Hover
     //Node is created under the hood
-    let mut hover = Arc::new(RwLock::new(Hover::new(String::from("127.0.0.1"), 6202)));
+    let mut hover = Arc::new(RwLock::new(Hover::default().unwrap()));
 
     //fully blocking start implementation.
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
 
-    let value = Arc::new(RwLock::new(42_f32));
+    let r: u8 = rand::random();
+    let value = Arc::new(RwLock::new(r as f32));
 
     hover
         .write()
@@ -37,15 +38,28 @@ fn main() {
         .unwrap()
         .broadcast(serialize(&*value.read().unwrap()).unwrap());
 
-    let v_ = value.clone();
+    let value_ = value.clone();
+    let hover_ = hover.clone();
     hover.write().unwrap().add_broadcast_listener(move |msg| {
         let in_: f32 = deserialize(msg.payload.as_slice()).unwrap();
-        let l = v_.read().unwrap().clone();
-        *v_.write().unwrap() = (l + in_) / 2_f32;
+        let current = value_.read().unwrap().clone();
+
+        if in_ < current {
+            hover_
+                .read()
+                .unwrap()
+                .get_messaging_service()
+                .unwrap()
+                .read()
+                .unwrap()
+                .broadcast(serialize(&current).unwrap());
+        }
+
+        *value_.write().unwrap() = current.max(in_);
     });
 
     loop {
-        println!("----AVERAGE VALUE={}", value.read().unwrap());
+        println!("----MAX VALUE={}", value.read().unwrap());
 
         std::thread::sleep_ms(500);
     }

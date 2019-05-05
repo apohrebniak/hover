@@ -2,12 +2,15 @@ use crate::common::NodeMeta;
 use crate::events::{Event, EventListener, EventLoop};
 use crate::membership::MembershipService;
 
+use crate::config::DiscoveryConfig;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 /**Send Join and Leave events periodicaly*/
 pub struct DiscoveryProvider {
     local_node_meta: NodeMeta,
+    config: DiscoveryConfig,
     worker_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
     membership_service: Arc<RwLock<MembershipService>>,
     event_loop: Arc<RwLock<EventLoop>>,
@@ -16,11 +19,13 @@ pub struct DiscoveryProvider {
 impl DiscoveryProvider {
     pub fn new(
         local_node_meta: NodeMeta,
+        config: DiscoveryConfig,
         membership_service: Arc<RwLock<MembershipService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> DiscoveryProvider {
         DiscoveryProvider {
             local_node_meta,
+            config,
             worker_thread: Arc::new(Mutex::new(None)),
             membership_service,
             event_loop,
@@ -32,6 +37,7 @@ impl DiscoveryProvider {
         let local_join_event = Event::JoinOut {
             node_meta: self.local_node_meta.clone(),
         };
+        let rate = self.config.rate_ms;
 
         let thread = std::thread::spawn(move || loop {
             loop_
@@ -40,7 +46,7 @@ impl DiscoveryProvider {
                 .post_event(local_join_event.clone())
                 .unwrap();
 
-            std::thread::sleep_ms(10000); //TODO: make config
+            std::thread::sleep(Duration::from_millis(rate))
         });
 
         self.worker_thread.lock().unwrap().replace(thread);

@@ -57,11 +57,6 @@ impl MessageDispatcher {
         self.resp_callbacks.remove(&msg_id);
     }
 
-    //TODO: implement
-    pub fn subscribe_for_topic(&mut self) -> Result<(), ()> {
-        Ok(())
-    }
-
     fn handle_in_message(&self, msg: Arc<Message>) {
         match msg.msg_type {
             MessageType::Request => self.handle_request(msg),
@@ -94,7 +89,7 @@ impl MessageDispatcher {
     fn build_probe_in_event(&self, msg: Arc<Message>) -> Event {
         ProbeIn {
             cor_id: msg.cor_id.clone(),
-            return_address: msg.return_address.clone().unwrap(),
+            return_address: msg.return_address.clone(),
         }
     }
 
@@ -105,7 +100,7 @@ impl MessageDispatcher {
         ProbeReqIn {
             cor_id: msg.cor_id.clone(),
             probe_node: probe_payload.node,
-            return_address: msg.return_address.clone().unwrap(),
+            return_address: msg.return_address.clone(),
         }
     }
 
@@ -157,7 +152,7 @@ impl MessagingService {
     ) -> Result<(), Box<Error>> {
         let msg = Message {
             cor_id: msg_id,
-            return_address: Some(self.local_node.addr.clone()),
+            return_address: self.local_node.addr.clone(),
             msg_type: MessageType::Response,
             payload,
         };
@@ -182,7 +177,7 @@ impl MessagingService {
     ) -> Result<(), Box<Error>> {
         let msg = Message {
             cor_id: gen_msg_id(),
-            return_address: Some(self.local_node.addr.clone()),
+            return_address: self.local_node.addr.clone(),
             msg_type,
             payload,
         };
@@ -207,7 +202,7 @@ impl MessagingService {
     ) -> Result<(), Box<Error>> {
         let msg = Message {
             cor_id: gen_msg_id(),
-            return_address: Some(self.local_node.addr.clone()),
+            return_address: self.local_node.addr.clone(),
             msg_type,
             payload,
         };
@@ -239,7 +234,7 @@ impl MessagingService {
         let correlation_id = gen_msg_id();
         let msg = Message {
             cor_id: correlation_id,
-            return_address: Some(self.local_node.addr.clone()),
+            return_address: self.local_node.addr.clone(),
             msg_type,
             payload,
         };
@@ -269,7 +264,7 @@ impl MessagingService {
         let correlation_id = gen_msg_id();
         let msg = Message {
             cor_id: correlation_id,
-            return_address: Some(self.local_node.addr.clone()),
+            return_address: self.local_node.addr.clone(),
             msg_type,
             payload,
         };

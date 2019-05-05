@@ -10,6 +10,7 @@ use crate::events::{Event, EventListener, EventLoop};
 use crate::message::MessagingService;
 use crate::serialize;
 
+use crate::config::DiscoveryConfig;
 use chashmap::CHashMap;
 use core::borrow::Borrow;
 use std::error::Error;
@@ -30,11 +31,13 @@ pub struct MembershipService {
 impl MembershipService {
     pub fn new(
         local_node_meta: NodeMeta,
+        config: DiscoveryConfig,
         messaging_service: Arc<RwLock<MessagingService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> MembershipService {
         let swim = SwimProtocol::new(
             local_node_meta.clone(),
+            config,
             messaging_service.clone(),
             event_loop,
         );
@@ -148,6 +151,7 @@ impl EventListener for MembershipService {
 /**SWIM protocol logic and process*/
 struct SwimProtocol {
     local_node_meta: NodeMeta,
+    config: DiscoveryConfig,
     members: Arc<RwLock<Vec<NodeMeta>>>,
     messaging_service: Arc<RwLock<MessagingService>>,
     // left members queue
@@ -157,11 +161,13 @@ struct SwimProtocol {
 impl SwimProtocol {
     fn new(
         local_node_meta: NodeMeta,
+        config: DiscoveryConfig,
         messaging_service: Arc<RwLock<MessagingService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> SwimProtocol {
         SwimProtocol {
             local_node_meta,
+            config,
             members: Arc::new(RwLock::new(Vec::new())),
             messaging_service,
             event_loop,
@@ -182,7 +188,9 @@ impl SwimProtocol {
             let member_to_probe: Option<NodeMeta> = members_.choose(rng).map(|n| n.clone());
             if let Some(member_to_probe) = member_to_probe {
                 if let Err(_) = self.probe_member(&member_to_probe) {
-                    let other_members: Vec<&NodeMeta> = members_.choose_multiple(rng, 2).collect(); //TODO: config
+                    let other_members: Vec<&NodeMeta> = members_
+                        .choose_multiple(rng, self.config.fanout as usize)
+                        .collect();
 
                     let is_available = other_members
                         .into_iter()
@@ -196,7 +204,7 @@ impl SwimProtocol {
                 }
             }
 
-            std::thread::sleep_ms(5000); //TODO: config
+            std::thread::sleep(Duration::from_millis(self.config.rate_ms));
         }
     }
 
@@ -208,8 +216,8 @@ impl SwimProtocol {
                 Vec::new(),
                 member_to_probe,
                 MessageType::Probe,
-                Duration::new(1, 0),
-            ) //TODO: config
+                Duration::from_millis(self.config.probe_timeout_ms),
+            )
             .map(|_| ())
     }
 
@@ -231,8 +239,8 @@ impl SwimProtocol {
                 payload_bytes,
                 member,
                 MessageType::ProbeReq,
-                Duration::new(1, 0),
-            ) //TODO: config
+                Duration::from_millis(self.config.probe_req_timeout_ms),
+            )
             .map(|_| ())
     }
 

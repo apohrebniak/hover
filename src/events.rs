@@ -88,7 +88,6 @@ impl EventLoop {
         }
     }
 
-    //TODO: join on the thread
     pub fn start(&self) {
         self.atomic_run.store(true, Ordering::Relaxed);
 
