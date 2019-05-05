@@ -10,6 +10,7 @@ use membership::MembershipService;
 use message::MessagingService;
 
 use crate::common::{BroadcastMessage, Message, NodeMeta};
+use crate::config::HoverConfig;
 use crate::discovery::DiscoveryProvider;
 use crate::events::{EventListener, EventLoop};
 use crate::message::MessageDispatcher;
@@ -19,6 +20,7 @@ use uuid::Uuid;
 
 pub mod broadcast;
 pub mod common;
+pub mod config;
 pub mod connection;
 pub mod discovery;
 pub mod events;
@@ -28,23 +30,36 @@ pub mod serialize;
 
 /**Main API for using service*/
 pub struct Hover {
-    address: Address,
     node: Option<Node>,
+    config: HoverConfig,
     started: bool,
 }
 
 impl Hover {
-    pub fn new(host: String, port: u16) -> Hover {
-        let addr = Address {
-            ip: Ipv4Addr::from_str(&host).expect("IP address expected!"),
-            port,
+    fn new(conf: config::HoverConfig) -> Result<Hover, Box<Error>> {
+        println!("Initializing with config: {:?}", conf);
+
+        let hover = Hover {
+            node: Option::None,
+            config: conf,
+            started: false,
         };
 
-        Hover {
-            address: addr,
-            node: Option::None,
-            started: false,
-        }
+        Ok(hover)
+    }
+
+    pub fn default() -> Result<Hover, Box<Error>> {
+        let conf = config::HoverConfig::default()?;
+        self::Hover::new(conf)
+    }
+
+    pub fn with_conf(conf: config::HoverConfig) -> Result<Hover, Box<Error>> {
+        self::Hover::new(conf)
+    }
+
+    pub fn with_conf_path(path: &str) -> Result<Hover, Box<Error>> {
+        let conf = config::HoverConfig::from_file(path)?;
+        self::Hover::new(conf)
     }
 
     pub fn get_cluster_service(&self) -> Result<Arc<RwLock<MembershipService>>, &str> {
@@ -65,7 +80,7 @@ impl Hover {
         match self.started {
             true => Err("Hover is already started!"),
             false => {
-                let node = Node::new(self.address.ip.clone(), self.address.port.clone());
+                let node = Node::new(self.config.clone());
                 node.start();
                 self.node = Option::from(node);
                 self.started = true;
@@ -117,6 +132,7 @@ impl Hover {
 /**Representation of the Hover node*/
 struct Node {
     meta: NodeMeta,
+    config: HoverConfig,
     connection_service: Arc<RwLock<ConnectionService>>,
     broadcast_service: Arc<RwLock<BroadcastService>>,
     messaging_service: Arc<RwLock<MessagingService>>,
@@ -127,18 +143,21 @@ struct Node {
 }
 
 impl Node {
-    fn new(host: Ipv4Addr, port: u16) -> Node {
+    fn new(conf: HoverConfig) -> Node {
         let node_id = Uuid::new_v4();
 
         let node_meta = NodeMeta {
             id: node_id,
-            addr: Address { ip: host, port },
+            addr: Address {
+                ip: Ipv4Addr::from_str(conf.address.as_str()).unwrap(),
+                port: conf.port,
+            },
         };
 
-        /**Get multicast configs from config object*/ //TODO: config object
+        /**Get multicast configs from config object*/
         let multicast_addr = Address {
-            ip: Ipv4Addr::new(228, 0, 0, 1),
-            port: 2403,
+            ip: Ipv4Addr::from_str(conf.discovery.multicast_group.as_str()).unwrap(),
+            port: conf.discovery.multicast_port,
         };
 
         let event_loop = Arc::new(RwLock::new(EventLoop::new()));
@@ -158,18 +177,21 @@ impl Node {
 
         let membership_service = Arc::new(RwLock::new(MembershipService::new(
             node_meta.clone(),
+            conf.discovery.clone(),
             messaging_service.clone(),
             event_loop.clone(),
         )));
 
         let discovery_provider = Arc::new(RwLock::new(DiscoveryProvider::new(
             node_meta.clone(),
+            conf.discovery.clone(),
             membership_service.clone(),
             event_loop.clone(),
         )));
 
         let broadcast_service = Arc::new(RwLock::new(BroadcastService::new(
             node_meta.clone(),
+            conf.broadcast.clone(),
             multicast_addr,
             membership_service.clone(),
             messaging_service.clone(),
@@ -190,6 +212,7 @@ impl Node {
 
         Node {
             meta: node_meta.clone(),
+            config: conf,
             connection_service,
             broadcast_service,
             messaging_service,
@@ -243,18 +266,6 @@ impl Node {
         let lis = Arc::new(RwLock::new(listener));
         match self.event_loop.read() {
             Ok(l) => l.add_listener(lis).map(|_| ()).map_err(|_| Box::new(())),
-            Err(_) => Err(Box::new(())),
-        }
-    }
-
-    fn subscribe_for_topic(&mut self) -> Result<(), Box<()>> {
-        match self
-            .message_dispatcher
-            .write()
-            .unwrap()
-            .subscribe_for_topic()
-        {
-            Ok(_) => Ok(()),
             Err(_) => Err(Box::new(())),
         }
     }

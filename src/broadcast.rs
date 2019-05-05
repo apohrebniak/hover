@@ -22,10 +22,12 @@ use crate::membership::MembershipService;
 use crate::message::MessagingService;
 use crate::serialize;
 
+use crate::config::{BroadcastConfig, DiscoveryConfig};
 use core::borrow::BorrowMut;
 use crossbeam_channel::{Receiver, Sender};
 use std::cell::RefCell;
 use std::collections::btree_set::BTreeSet;
+use std::time::Duration;
 use uuid::Uuid;
 
 const MULTICAST_INPUT_BUFF_SIZE: usize = 256;
@@ -47,6 +49,7 @@ pub struct BroadcastService {
 impl BroadcastService {
     pub fn new(
         local_node_meta: NodeMeta,
+        config: BroadcastConfig,
         multicast_address: Address,
         membership_service: Arc<RwLock<MembershipService>>,
         messaging_service: Arc<RwLock<MessagingService>>,
@@ -58,6 +61,7 @@ impl BroadcastService {
         let l = event_loop.clone();
 
         let gossip = Arc::new(GossipProtocol::new(
+            config,
             membership_service,
             messaging_service,
             event_loop.clone(),
@@ -242,6 +246,7 @@ struct DiscoveryMessage {
 
 /**Gossip protocol implementation and process*/
 struct GossipProtocol {
+    config: BroadcastConfig,
     listeners: RwLock<Vec<Box<Fn(Arc<BroadcastMessage>) -> () + 'static + Send + Sync>>>,
     send_buffer: chashmap::CHashMap<Uuid, Arc<RwLock<BufferedBroadcast>>>,
     keep_buffer: chashmap::CHashMap<Uuid, Arc<RwLock<BufferedBroadcast>>>,
@@ -254,11 +259,13 @@ struct GossipProtocol {
 
 impl GossipProtocol {
     fn new(
+        config: BroadcastConfig,
         membership_service: Arc<RwLock<MembershipService>>,
         messaging_service: Arc<RwLock<MessagingService>>,
         event_loop: Arc<RwLock<EventLoop>>,
     ) -> GossipProtocol {
         GossipProtocol {
+            config,
             listeners: RwLock::new(Vec::new()),
             send_buffer: chashmap::CHashMap::new(),
             keep_buffer: chashmap::CHashMap::new(),
@@ -296,7 +303,7 @@ impl GossipProtocol {
                 self.remove_from_keep_buffer();
             }
 
-            std::thread::sleep_ms(1000); //TODO: config
+            std::thread::sleep(Duration::from_millis(self.config.rate_ms))
         }
     }
 
@@ -340,7 +347,7 @@ impl GossipProtocol {
         let nodes = self.membership_service.read().unwrap().get_member_count() as isize as f32;
 
         let buffered_message = BufferedBroadcast {
-            rounds: get_rounds_count(nodes, 2_f32), //TODO config
+            rounds: get_rounds_count(nodes, self.config.rate_ms as f32),
             send: true,
             payload,
         };
@@ -357,7 +364,7 @@ impl GossipProtocol {
             .read()
             .unwrap()
             .get_members()
-            .choose_multiple(rng, 2) //TODO: config
+            .choose_multiple(rng, self.config.fanout as usize)
             .cloned()
             .collect()
     }
@@ -386,7 +393,7 @@ impl GossipProtocol {
     fn move_to_keep_buffer(&self) {
         for key in self.send_keys.read().unwrap().iter() {
             if let Some(br) = self.send_buffer.get(key) {
-                if br.read().unwrap().rounds == 0 {
+                if br.read().unwrap().rounds <= 0 {
                     br.write().unwrap().send = false;
                     self.keep_buffer.insert(key.clone(), br.clone());
                 }
@@ -404,11 +411,11 @@ impl GossipProtocol {
     fn remove_from_keep_buffer(&self) {
         for key in self.keep_keys.read().unwrap().iter() {
             if let Some(br) = self.keep_buffer.get(key) {
-                br.write().unwrap().rounds -= 1;
+                br.write().unwrap().rounds -= 1_i32;
             }
         }
         self.keep_buffer
-            .retain(|_, value| value.read().unwrap().rounds > -10);
+            .retain(|_, value| value.read().unwrap().rounds > -self.config.message_keep);
         self.keep_keys
             .write()
             .unwrap()

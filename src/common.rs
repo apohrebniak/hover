@@ -29,7 +29,7 @@ pub struct Message {
     pub cor_id: Uuid,
     pub msg_type: MessageType,
     pub payload: Vec<u8>,
-    pub return_address: Option<Address>, //TODO: remove option
+    pub return_address: Address,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
