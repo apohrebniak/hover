@@ -1,0 +1,7 @@
+[package]
+name = "kv-rest"
+version = "0.1.0"
+authors = ["apohrebniak <andrii.pohrebniak@gmail.com>"]
+edition = "2018"
+
+[dependencies]
