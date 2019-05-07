@@ -82,7 +82,13 @@ fn get_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let map = HoverState::take_from(&mut state).map;
 
-    let res = create_empty_response(&state, StatusCode::OK);
+    let value = map.read().unwrap().get(&key).map(|v| v.clone());
+
+    let res = match value {
+        Some(v) => create_response(&state, StatusCode::OK, mime::TEXT_PLAIN_UTF_8, v),
+        None => create_empty_response(&state, StatusCode::NOT_FOUND),
+    };
+
     (state, res)
 }
 
