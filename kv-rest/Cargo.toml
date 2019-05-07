@@ -11,3 +11,5 @@ gotham_derive = "0.3.0"
 hyper = "*"
 mime = "*"
 serde = { version = "1.0.89", features = ["derive"] }
+chashmap = "2.2.2"
+bincode = "1.1.3"

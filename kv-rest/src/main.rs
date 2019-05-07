@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, RwLock};
 #[derive(Clone, StateData)]
 struct HoverState {
     hover: Arc<RwLock<hover::Hover>>,
+    map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -32,20 +33,28 @@ struct PathStringExtractor {
     key: String,
 }
 
-fn get_info(state: State) -> (State, String) {
+fn get_info(mut state: State) -> (State, String) {
+    let hover = HoverState::take_from(&mut state).hover;
+
     (state, String::from("Info"))
 }
 
-fn get_members(state: State) -> (State, String) {
+fn get_members(mut state: State) -> (State, String) {
+    let hover = HoverState::take_from(&mut state).hover;
+
     (state, String::from("Members"))
 }
 
-fn get_kv_all(state: State) -> (State, String) {
+fn get_kv_all(mut state: State) -> (State, String) {
+    let map = HoverState::take_from(&mut state).map;
+
     (state, String::from("KV all"))
 }
 
 fn get_kv(mut state: State) -> (State, String) {
     let key = PathStringExtractor::take_from(&mut state).key;
+    let map = HoverState::take_from(&mut state).map;
+
     (
         state,
         format!("{:?}", format_args!("Requested parameter {:?}", key)),
@@ -54,6 +63,8 @@ fn get_kv(mut state: State) -> (State, String) {
 
 fn post_kv(mut state: State) -> (State, String) {
     let key = PathStringExtractor::take_from(&mut state).key;
+    let map = HoverState::take_from(&mut state).map;
+
     (
         state,
         format!("{:?}", format_args!("Post parameter {:?}", key)),
@@ -62,6 +73,8 @@ fn post_kv(mut state: State) -> (State, String) {
 
 fn delete_kv(mut state: State) -> (State, String) {
     let key = PathStringExtractor::take_from(&mut state).key;
+    let map = HoverState::take_from(&mut state).map;
+
     (
         state,
         format!("{:?}", format_args!("Delete parameter {:?}", key)),
@@ -102,12 +115,34 @@ pub fn main() {
 
     hover.write().unwrap().start();
 
+    let hover_ = hover.clone();
+    hover
+        .write()
+        .unwrap()
+        .add_broadcast_listener(|msg| {
+            let event: MapEvent = bincode::deserialize(msg.payload.as_slice()).unwrap();
+
+            match event {
+                MapEvent::Post { key, value } => {}
+                MapEvent::Delete { key } => {}
+            }
+            x
+        })
+        .unwrap();
+
     let hover_state = HoverState {
         hover: hover.clone(),
+        map: Arc::new(RwLock::new(chashmap::CHashMap::new())),
     };
 
     let router = router(hover_state);
 
     println!("Listening for requests at http://{}", addr);
     gotham::start(addr, router)
+}
+
+#[derive(Deserialize, Serialize)]
+enum MapEvent {
+    Post { key: String, value: String },
+    Delete { key: String },
 }
