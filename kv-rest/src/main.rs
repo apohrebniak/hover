@@ -94,7 +94,10 @@ fn get_kv(mut state: State) -> (State, Response<Body>) {
 
 fn post_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
+    let value = QueryStringExtractor::take_from(&mut state).value;
     let map = HoverState::take_from(&mut state).map;
+
+    let inserted_opt = map.read().unwrap().insert(key, value);
 
     let res = create_empty_response(&state, StatusCode::OK);
     (state, res)
@@ -103,6 +106,8 @@ fn post_kv(mut state: State) -> (State, Response<Body>) {
 fn delete_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let map = HoverState::take_from(&mut state).map;
+
+    let removed_opt = map.read().unwrap().remove(&key);
 
     let res = create_empty_response(&state, StatusCode::OK);
     (state, res)
@@ -172,16 +177,3 @@ enum MapEvent {
     Post { key: String, value: String },
     Delete { key: String },
 }
-
-//impl Serialize for chashmap::CHashMap<String, String> {
-//    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//    where
-//        S: Serializer,
-//    {
-//        let mut map = serializer.serialize_map(Some(self.len()))?;
-//        for (k, v) in &self.x {
-//            map.serialize_entry(&k.to_string(), &v)?;
-//        }
-//        map.end()
-//    }
-//}
