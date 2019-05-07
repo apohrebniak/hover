@@ -5,22 +5,21 @@ extern crate hyper;
 extern crate mime;
 extern crate serde;
 
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::iter::FromIterator;
+use std::sync::{Arc, Mutex, RwLock};
+
+use gotham::helpers::http::response::{create_empty_response, create_response};
 use gotham::middleware::state::StateMiddleware;
 use gotham::pipeline::single::single_pipeline;
 use gotham::pipeline::single_middleware;
 use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::{FromState, State};
-
-use serde::{Deserialize, Serialize, Serializer};
-
-use gotham::helpers::http::response::{create_empty_response, create_response};
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
-use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::iter::FromIterator;
-use std::sync::{Arc, Mutex, RwLock};
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, StateData)]
 struct HoverState {
@@ -95,9 +94,25 @@ fn get_kv(mut state: State) -> (State, Response<Body>) {
 fn post_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let value = QueryStringExtractor::take_from(&mut state).value;
-    let map = HoverState::take_from(&mut state).map;
+    let hover_state = HoverState::take_from(&mut state);
+    let map = hover_state.map;
+    let hover = hover_state.hover;
 
-    let inserted_opt = map.read().unwrap().insert(key, value);
+    let inserted_opt = map.read().unwrap().insert(key.clone(), value.clone());
+
+    if let None = inserted_opt {
+        let event = MapEvent::Post { key, value };
+        let event = bincode::serialize(&event).unwrap();
+
+        hover
+            .read()
+            .unwrap()
+            .get_messaging_service()
+            .unwrap()
+            .read()
+            .unwrap()
+            .broadcast(event);
+    };
 
     let res = create_empty_response(&state, StatusCode::OK);
     (state, res)
@@ -105,9 +120,25 @@ fn post_kv(mut state: State) -> (State, Response<Body>) {
 
 fn delete_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
-    let map = HoverState::take_from(&mut state).map;
+    let hover_state = HoverState::take_from(&mut state);
+    let map = hover_state.map;
+    let hover = hover_state.hover;
 
     let removed_opt = map.read().unwrap().remove(&key);
+
+    if let Some(_) = removed_opt {
+        let event = MapEvent::Delete { key };
+        let event = bincode::serialize(&event).unwrap();
+
+        hover
+            .read()
+            .unwrap()
+            .get_messaging_service()
+            .unwrap()
+            .read()
+            .unwrap()
+            .broadcast(event);
+    };
 
     let res = create_empty_response(&state, StatusCode::OK);
     (state, res)
@@ -145,26 +176,30 @@ pub fn main() {
         .map(|h| Arc::new(RwLock::new(h)))
         .unwrap();
 
+    let map = Arc::new(RwLock::new(chashmap::CHashMap::new()));
+
     hover.write().unwrap().start();
 
     let hover_ = hover.clone();
+    let map_ = map.clone();
     hover
         .write()
         .unwrap()
-        .add_broadcast_listener(|msg| {
+        .add_broadcast_listener(move |msg| {
             let event: MapEvent = bincode::deserialize(msg.payload.as_slice()).unwrap();
 
             match event {
-                MapEvent::Post { key, value } => {}
-                MapEvent::Delete { key } => {}
+                MapEvent::Post { key, value } => {
+                    map_.read().unwrap().insert(key, value);
+                }
+                MapEvent::Delete { key } => {
+                    map_.read().unwrap().remove(&key);
+                }
             }
         })
         .unwrap();
 
-    let hover_state = HoverState {
-        hover: hover.clone(),
-        map: Arc::new(RwLock::new(chashmap::CHashMap::new())),
-    };
+    let hover_state = HoverState { hover, map };
 
     let router = router(hover_state);
 
