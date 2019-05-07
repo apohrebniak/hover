@@ -14,6 +14,8 @@ use gotham::state::{FromState, State};
 
 use serde::{Deserialize, Serialize};
 
+use gotham::helpers::http::response::{create_empty_response, create_response};
+use hyper::{Body, Response, StatusCode};
 use std::fs::OpenOptions;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -33,52 +35,49 @@ struct PathStringExtractor {
     key: String,
 }
 
-fn get_info(mut state: State) -> (State, String) {
+fn get_info(mut state: State) -> (State, Response<Body>) {
     let hover = HoverState::take_from(&mut state).hover;
 
-    (state, String::from("Info"))
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
-fn get_members(mut state: State) -> (State, String) {
+fn get_members(mut state: State) -> (State, Response<Body>) {
     let hover = HoverState::take_from(&mut state).hover;
 
-    (state, String::from("Members"))
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
-fn get_kv_all(mut state: State) -> (State, String) {
+fn get_kv_all(mut state: State) -> (State, Response<Body>) {
     let map = HoverState::take_from(&mut state).map;
 
-    (state, String::from("KV all"))
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
-fn get_kv(mut state: State) -> (State, String) {
+fn get_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let map = HoverState::take_from(&mut state).map;
 
-    (
-        state,
-        format!("{:?}", format_args!("Requested parameter {:?}", key)),
-    )
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
-fn post_kv(mut state: State) -> (State, String) {
+fn post_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let map = HoverState::take_from(&mut state).map;
 
-    (
-        state,
-        format!("{:?}", format_args!("Post parameter {:?}", key)),
-    )
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
-fn delete_kv(mut state: State) -> (State, String) {
+fn delete_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
     let map = HoverState::take_from(&mut state).map;
 
-    (
-        state,
-        format!("{:?}", format_args!("Delete parameter {:?}", key)),
-    )
+    let res = create_empty_response(&state, StatusCode::OK);
+    (state, res)
 }
 
 fn router(hover_state: HoverState) -> Router {
@@ -126,7 +125,6 @@ pub fn main() {
                 MapEvent::Post { key, value } => {}
                 MapEvent::Delete { key } => {}
             }
-            x
         })
         .unwrap();
 
