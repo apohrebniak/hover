@@ -12,11 +12,14 @@ use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::{FromState, State};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use gotham::helpers::http::response::{create_empty_response, create_response};
 use hyper::{Body, Response, StatusCode};
+use mime::Mime;
+use std::collections::HashMap;
 use std::fs::OpenOptions;
+use std::iter::FromIterator;
 use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone, StateData)]
@@ -44,15 +47,34 @@ fn get_info(mut state: State) -> (State, Response<Body>) {
 
 fn get_members(mut state: State) -> (State, Response<Body>) {
     let hover = HoverState::take_from(&mut state).hover;
+    let members = hover
+        .read()
+        .unwrap()
+        .get_cluster_service()
+        .map(|ms| ms.read().unwrap().get_members())
+        .unwrap();
 
-    let res = create_empty_response(&state, StatusCode::OK);
+    let res = create_response(
+        &state,
+        StatusCode::OK,
+        mime::APPLICATION_JSON,
+        serde_json::to_string(&members).unwrap(),
+    );
     (state, res)
 }
 
 fn get_kv_all(mut state: State) -> (State, Response<Body>) {
     let map = HoverState::take_from(&mut state).map;
 
-    let res = create_empty_response(&state, StatusCode::OK);
+    let local_map: HashMap<String, String> =
+        HashMap::from_iter(map.read().unwrap().clone().into_iter());
+
+    let res = create_response(
+        &state,
+        StatusCode::OK,
+        mime::APPLICATION_JSON,
+        serde_json::to_string(&local_map).unwrap(),
+    );
     (state, res)
 }
 
@@ -144,3 +166,16 @@ enum MapEvent {
     Post { key: String, value: String },
     Delete { key: String },
 }
+
+//impl Serialize for chashmap::CHashMap<String, String> {
+//    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//    where
+//        S: Serializer,
+//    {
+//        let mut map = serializer.serialize_map(Some(self.len()))?;
+//        for (k, v) in &self.x {
+//            map.serialize_entry(&k.to_string(), &v)?;
+//        }
+//        map.end()
+//    }
+//}
