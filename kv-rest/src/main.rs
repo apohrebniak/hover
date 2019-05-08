@@ -17,6 +17,7 @@ use gotham::pipeline::single_middleware;
 use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::{FromState, State};
+use hover::events::EventListener;
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
 use serde::{Deserialize, Serialize, Serializer};
@@ -179,9 +180,28 @@ pub fn main() {
     let map = Arc::new(RwLock::new(chashmap::CHashMap::new()));
 
     hover.write().unwrap().start();
+    setup_hover(hover.clone(), map.clone());
 
+    let hover_state = HoverState { hover, map };
+    let router = router(hover_state);
+
+    println!("Listening for requests at http://{}", addr);
+    gotham::start(addr, router)
+}
+
+#[derive(Deserialize, Serialize)]
+enum MapEvent {
+    Post { key: String, value: String },
+    Delete { key: String },
+}
+
+fn setup_hover(
+    hover: Arc<RwLock<hover::Hover>>,
+    map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+) {
     let hover_ = hover.clone();
     let map_ = map.clone();
+
     hover
         .write()
         .unwrap()
@@ -199,16 +219,49 @@ pub fn main() {
         })
         .unwrap();
 
-    let hover_state = HoverState { hover, map };
+    let member_added_listener = MapMemberAddedListener {
+        hover: hover.clone(),
+        map: map.clone(),
+    };
+    hover
+        .read()
+        .unwrap()
+        .add_event_listener(member_added_listener);
 
-    let router = router(hover_state);
+    let map_ = map.clone();
+    hover.write().unwrap().add_msg_listener(move |msg| {
+        if let hover::common::MessageType::Request = msg.msg_type {
+            let local_map: HashMap<String, String> =
+                bincode::deserialize(msg.payload.as_slice()).unwrap();
 
-    println!("Listening for requests at http://{}", addr);
-    gotham::start(addr, router)
+            for (key, value) in local_map.into_iter() {
+                map_.read().unwrap().insert(key, value);
+            }
+        }
+    });
 }
 
-#[derive(Deserialize, Serialize)]
-enum MapEvent {
-    Post { key: String, value: String },
-    Delete { key: String },
+struct MapMemberAddedListener {
+    hover: Arc<RwLock<hover::Hover>>,
+    map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+}
+
+impl EventListener for MapMemberAddedListener {
+    fn on_event(&self, event: hover::events::Event) {
+        if let hover::events::Event::MemberAdded { node_meta } = event {
+            let local_map: HashMap<String, String> =
+                HashMap::from_iter(self.map.read().unwrap().clone().into_iter());
+
+            let payload = bincode::serialize(&local_map).unwrap();
+
+            self.hover
+                .read()
+                .unwrap()
+                .get_messaging_service()
+                .unwrap()
+                .read()
+                .unwrap()
+                .send_to_member(payload, &node_meta);
+        }
+    }
 }
