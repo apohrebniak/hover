@@ -21,6 +21,10 @@ use hover::events::EventListener;
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
 use serde::{Deserialize, Serialize, Serializer};
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
+
+pub mod settings;
 
 #[derive(Clone, StateData)]
 struct HoverState {
@@ -170,7 +174,7 @@ fn router(hover_state: HoverState) -> Router {
 }
 
 pub fn main() {
-    let addr = "127.0.0.1:9090";
+    let settings = settings::Settings::new().unwrap();
     println!("Starting hover...");
 
     let hover = hover::Hover::default()
@@ -185,8 +189,17 @@ pub fn main() {
     let hover_state = HoverState { hover, map };
     let router = router(hover_state);
 
-    println!("Listening for requests at http://{}", addr);
-    gotham::start(addr, router)
+    println!(
+        "Listening for requests at http://{}:{}",
+        settings.host, settings.port
+    );
+    gotham::start(
+        (
+            Ipv4Addr::from_str(settings.host.as_str()).unwrap(),
+            settings.port,
+        ),
+        router,
+    )
 }
 
 #[derive(Deserialize, Serialize)]
