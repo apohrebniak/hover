@@ -17,12 +17,14 @@ use gotham::pipeline::single_middleware;
 use gotham::router::builder::*;
 use gotham::router::Router;
 use gotham::state::{FromState, State};
+use hover::common::{Address, NodeMeta};
 use hover::events::EventListener;
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
 use serde::{Deserialize, Serialize, Serializer};
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
+use uuid::Uuid;
 
 pub mod settings;
 
@@ -30,6 +32,7 @@ pub mod settings;
 struct HoverState {
     hover: Arc<RwLock<hover::Hover>>,
     map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+    kv_nodes: Arc<RwLock<chashmap::CHashMap<Uuid, hover::common::Address>>>,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -42,6 +45,13 @@ struct PathStringExtractor {
     key: String,
 }
 
+#[derive(Serialize)]
+struct KvMember {
+    id: Uuid,
+    http_address: Address,
+    hover_node: NodeMeta,
+}
+
 fn get_info(mut state: State) -> (State, Response<Body>) {
     let hover = HoverState::take_from(&mut state).hover;
 
@@ -50,13 +60,17 @@ fn get_info(mut state: State) -> (State, Response<Body>) {
 }
 
 fn get_members(mut state: State) -> (State, Response<Body>) {
-    let hover = HoverState::take_from(&mut state).hover;
-    let members = hover
+    let hover_state = HoverState::take_from(&mut state);
+    let hover = hover_state.hover;
+    let kv_nodes = hover_state.kv_nodes;
+
+    let mut members = hover
         .read()
         .unwrap()
         .get_cluster_service()
         .map(|ms| ms.read().unwrap().get_members())
         .unwrap();
+    members.retain(|nm| kv_nodes.read().unwrap().contains_key(&nm.id));
 
     let res = create_response(
         &state,
@@ -183,10 +197,27 @@ pub fn main() {
 
     let map = Arc::new(RwLock::new(chashmap::CHashMap::new()));
 
-    hover.write().unwrap().start();
-    setup_hover(hover.clone(), map.clone());
+    let kv_nodes = Arc::new(RwLock::new(chashmap::CHashMap::new()));
 
-    let hover_state = HoverState { hover, map };
+    let kv_address = Arc::new(RwLock::new(hover::common::Address {
+        ip: Ipv4Addr::from_str(settings.host.as_str()).unwrap(),
+        port: settings.port,
+    }));
+
+    hover.write().unwrap().start();
+    setup_hover(
+        hover.clone(),
+        map.clone(),
+        kv_nodes.clone(),
+        kv_address.clone(),
+    );
+
+    let hover_state = HoverState {
+        hover,
+        map,
+        kv_nodes,
+    };
+
     let router = router(hover_state);
 
     println!(
@@ -211,6 +242,8 @@ enum MapEvent {
 fn setup_hover(
     hover: Arc<RwLock<hover::Hover>>,
     map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+    kv_nodes: Arc<RwLock<chashmap::CHashMap<Uuid, hover::common::Address>>>,
+    kv_address: Arc<RwLock<hover::common::Address>>,
 ) {
     let hover_ = hover.clone();
     let map_ = map.clone();
@@ -235,6 +268,7 @@ fn setup_hover(
     let member_added_listener = MapMemberAddedListener {
         hover: hover.clone(),
         map: map.clone(),
+        kv_address: kv_address.clone(),
     };
     hover
         .read()
@@ -244,11 +278,27 @@ fn setup_hover(
     let map_ = map.clone();
     hover.write().unwrap().add_msg_listener(move |msg| {
         if let hover::common::MessageType::Request = msg.msg_type {
-            let local_map: HashMap<String, String> =
-                bincode::deserialize(msg.payload.as_slice()).unwrap();
+            let kv_msg: KvMessage = bincode::deserialize(msg.payload.as_slice()).unwrap();
 
-            for (key, value) in local_map.into_iter() {
-                map_.read().unwrap().insert(key, value);
+            match kv_msg.msg_type.as_str() {
+                "map" => {
+                    let local_map: HashMap<String, String> =
+                        bincode::deserialize(kv_msg.payload.as_slice()).unwrap();
+
+                    for (key, value) in local_map.into_iter() {
+                        map_.read().unwrap().insert(key, value);
+                    }
+                }
+                "kv_addr" => {
+                    let external_node_addr: UuidAddress =
+                        bincode::deserialize(kv_msg.payload.as_slice()).unwrap();
+
+                    kv_nodes
+                        .read()
+                        .unwrap()
+                        .insert(external_node_addr.id, external_node_addr.address);
+                }
+                _ => {}
             }
         }
     });
@@ -257,6 +307,24 @@ fn setup_hover(
 struct MapMemberAddedListener {
     hover: Arc<RwLock<hover::Hover>>,
     map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+    kv_address: Arc<RwLock<hover::common::Address>>,
+}
+
+impl MapMemberAddedListener {
+    fn send_message(&self, msg_type: String, payload: Vec<u8>, node_meta: &NodeMeta) {
+        let msg = KvMessage { msg_type, payload };
+
+        let bytes = bincode::serialize(&msg).unwrap();
+
+        self.hover
+            .read()
+            .unwrap()
+            .get_messaging_service()
+            .unwrap()
+            .read()
+            .unwrap()
+            .send_to_member(bytes, node_meta);
+    }
 }
 
 impl EventListener for MapMemberAddedListener {
@@ -264,17 +332,27 @@ impl EventListener for MapMemberAddedListener {
         if let hover::events::Event::MemberAdded { node_meta } = event {
             let local_map: HashMap<String, String> =
                 HashMap::from_iter(self.map.read().unwrap().clone().into_iter());
+            let map_bytes = bincode::serialize(&local_map).unwrap();
+            self.send_message(String::from("map"), map_bytes, &node_meta);
 
-            let payload = bincode::serialize(&local_map).unwrap();
-
-            self.hover
-                .read()
-                .unwrap()
-                .get_messaging_service()
-                .unwrap()
-                .read()
-                .unwrap()
-                .send_to_member(payload, &node_meta);
+            let uuid_address = UuidAddress {
+                id: node_meta.id.clone(),
+                address: self.kv_address.read().unwrap().clone(),
+            };
+            let addr_bytes = bincode::serialize(&uuid_address).unwrap();
+            self.send_message(String::from("kv_addr"), addr_bytes, &node_meta);
         }
     }
+}
+
+#[derive(Deserialize, Serialize)]
+struct KvMessage {
+    msg_type: String,
+    payload: Vec<u8>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct UuidAddress {
+    id: Uuid,
+    address: hover::common::Address,
 }
