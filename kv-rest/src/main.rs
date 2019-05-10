@@ -48,7 +48,7 @@ struct PathStringExtractor {
 #[derive(Serialize)]
 struct KvMember {
     id: Uuid,
-    http_address: Address,
+    http_address: Option<Address>,
     hover_node: NodeMeta,
 }
 
@@ -70,13 +70,29 @@ fn get_members(mut state: State) -> (State, Response<Body>) {
         .get_cluster_service()
         .map(|ms| ms.read().unwrap().get_members())
         .unwrap();
+
+    println!("BEFORE {:?}", members);
+
     members.retain(|nm| kv_nodes.read().unwrap().contains_key(&nm.id));
+
+    println!("AFTER {:?}", members);
+
+    println!("KV {:?}", kv_nodes);
+
+    let kv_members = members
+        .into_iter()
+        .map(|nm| KvMember {
+            id: nm.id.clone(),
+            http_address: kv_nodes.read().unwrap().get(&nm.id).map(|g| g.clone()),
+            hover_node: nm,
+        })
+        .collect::<Vec<_>>();
 
     let res = create_response(
         &state,
         StatusCode::OK,
         mime::APPLICATION_JSON,
-        serde_json::to_string(&members).unwrap(),
+        serde_json::to_string(&kv_members).unwrap(),
     );
     (state, res)
 }
@@ -293,6 +309,7 @@ fn setup_hover(
                     let external_node_addr: UuidAddress =
                         bincode::deserialize(kv_msg.payload.as_slice()).unwrap();
 
+                    println!("AAAAAAAAAAAAAAAAAAAAAA {:?}", external_node_addr);
                     kv_nodes
                         .read()
                         .unwrap()
@@ -330,13 +347,14 @@ impl MapMemberAddedListener {
 impl EventListener for MapMemberAddedListener {
     fn on_event(&self, event: hover::events::Event) {
         if let hover::events::Event::MemberAdded { node_meta } = event {
+            println!("MEMBER ADDED {:?}", node_meta);
             let local_map: HashMap<String, String> =
                 HashMap::from_iter(self.map.read().unwrap().clone().into_iter());
             let map_bytes = bincode::serialize(&local_map).unwrap();
             self.send_message(String::from("map"), map_bytes, &node_meta);
 
             let uuid_address = UuidAddress {
-                id: node_meta.id.clone(),
+                id: node_meta.id.clone(), //TODO
                 address: self.kv_address.read().unwrap().clone(),
             };
             let addr_bytes = bincode::serialize(&uuid_address).unwrap();
@@ -351,7 +369,7 @@ struct KvMessage {
     payload: Vec<u8>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct UuidAddress {
     id: Uuid,
     address: hover::common::Address,
