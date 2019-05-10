@@ -62,6 +62,13 @@ impl Hover {
         self::Hover::new(conf)
     }
 
+    pub fn get_node_id(&self) -> Option<Uuid> {
+        match self.node {
+            Some(ref node) => Some(node.meta.id.clone()),
+            None => None,
+        }
+    }
+
     pub fn get_cluster_service(&self) -> Result<Arc<RwLock<MembershipService>>, &str> {
         match self.node {
             Some(ref node) => Ok(node.membership_service.clone()),

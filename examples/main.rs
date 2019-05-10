@@ -26,6 +26,8 @@ fn main() {
     // Node is created and started to run in a separate thread
     hover.write().unwrap().start();
 
+    println!("HOVER ID {:?}", hover.read().unwrap().get_node_id());
+
     let r: u8 = rand::random();
     let value = Arc::new(RwLock::new(r as f32));
 
