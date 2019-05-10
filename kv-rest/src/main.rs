@@ -71,13 +71,7 @@ fn get_members(mut state: State) -> (State, Response<Body>) {
         .map(|ms| ms.read().unwrap().get_members())
         .unwrap();
 
-    println!("BEFORE {:?}", members);
-
     members.retain(|nm| kv_nodes.read().unwrap().contains_key(&nm.id));
-
-    println!("AFTER {:?}", members);
-
-    println!("KV {:?}", kv_nodes);
 
     let kv_members = members
         .into_iter()
@@ -284,6 +278,7 @@ fn setup_hover(
     let member_added_listener = MapMemberAddedListener {
         hover: hover.clone(),
         map: map.clone(),
+        kv_nodes: kv_nodes.clone(),
         kv_address: kv_address.clone(),
     };
     hover
@@ -309,7 +304,6 @@ fn setup_hover(
                     let external_node_addr: UuidAddress =
                         bincode::deserialize(kv_msg.payload.as_slice()).unwrap();
 
-                    println!("AAAAAAAAAAAAAAAAAAAAAA {:?}", external_node_addr);
                     kv_nodes
                         .read()
                         .unwrap()
@@ -324,6 +318,7 @@ fn setup_hover(
 struct MapMemberAddedListener {
     hover: Arc<RwLock<hover::Hover>>,
     map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
+    kv_nodes: Arc<RwLock<chashmap::CHashMap<Uuid, hover::common::Address>>>,
     kv_address: Arc<RwLock<hover::common::Address>>,
 }
 
@@ -346,19 +341,24 @@ impl MapMemberAddedListener {
 
 impl EventListener for MapMemberAddedListener {
     fn on_event(&self, event: hover::events::Event) {
-        if let hover::events::Event::MemberAdded { node_meta } = event {
-            println!("MEMBER ADDED {:?}", node_meta);
-            let local_map: HashMap<String, String> =
-                HashMap::from_iter(self.map.read().unwrap().clone().into_iter());
-            let map_bytes = bincode::serialize(&local_map).unwrap();
-            self.send_message(String::from("map"), map_bytes, &node_meta);
+        match event {
+            hover::events::Event::MemberAdded { node_meta } => {
+                let local_map: HashMap<String, String> =
+                    HashMap::from_iter(self.map.read().unwrap().clone().into_iter());
+                let map_bytes = bincode::serialize(&local_map).unwrap();
+                self.send_message(String::from("map"), map_bytes, &node_meta);
 
-            let uuid_address = UuidAddress {
-                id: node_meta.id.clone(), //TODO
-                address: self.kv_address.read().unwrap().clone(),
-            };
-            let addr_bytes = bincode::serialize(&uuid_address).unwrap();
-            self.send_message(String::from("kv_addr"), addr_bytes, &node_meta);
+                let uuid_address = UuidAddress {
+                    id: self.hover.read().unwrap().get_node_id().unwrap().clone(),
+                    address: self.kv_address.read().unwrap().clone(),
+                };
+                let addr_bytes = bincode::serialize(&uuid_address).unwrap();
+                self.send_message(String::from("kv_addr"), addr_bytes, &node_meta);
+            }
+            hover::events::Event::MemberLeft { node_meta } => {
+                self.kv_nodes.read().unwrap().remove(&(node_meta.id));
+            }
+            _ => {}
         }
     }
 }
