@@ -1,3 +1,22 @@
-.idea/
-target/
+/hover-kv-ui/.gradle
+/hover-kv-ui/build/
+!hover-kv-ui/gradle/wrapper/gradle-wrapper.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
 *.iml
+*.ipr
+/hover-kv-ui/out/
+/hover-kv-ui/build
+/hover/target
+/kv-rest/target
