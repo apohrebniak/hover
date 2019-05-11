@@ -6,15 +6,20 @@ import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
+import com.vaadin.flow.router.BeforeEvent;
+import com.vaadin.flow.router.HasUrlParameter;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.spring.annotation.UIScope;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @Route("node")
-public class NodeView extends VerticalLayout {
+@UIScope
+public class NodeView extends VerticalLayout implements HasUrlParameter<String> {
 
   private static final String TAB_MEMBERS = "Members";
   private static final String TAB_KV = "Key-Values";
@@ -22,13 +27,17 @@ public class NodeView extends VerticalLayout {
   private KvNodeService nodeService;
   private Map<Tab, TabPage> tabToPage = new HashMap<>();
 
+  private String host;
+  private Integer port;
+
   public NodeView(@Autowired KvNodeService nodeService) {
     this.nodeService = nodeService;
-    setupUi();
   }
 
   private void setupUi() {
-    add(new Text("Hover KV node on 127.0.0.1:1111"));
+    /*Title*/
+    String title = String.format("KV node %s:%d", this.host, this.port);
+    add(new Text(title));
 
     /*Tabs*/
     Tabs tabs = new Tabs();
@@ -66,7 +75,8 @@ public class NodeView extends VerticalLayout {
     TabPage page = new TabPage();
     page.setVisible(false);
 
-    List<MemberEntity> members = nodeService.getMembers();
+    List<MemberEntity> members = nodeService
+        .getMembers(URI.create("http://" + host + ":" + port + "/members"));
 
     if (members != null) { //TODO react with error
       members.stream()
@@ -81,5 +91,16 @@ public class NodeView extends VerticalLayout {
     TabPage page = new TabPage();
     page.setVisible(false);
     return page;
+  }
+
+  @Override
+  public void setParameter(BeforeEvent event, String parameter) {
+    String[] args = parameter.split("_");
+    if (args.length == 2) {
+      this.host = args[0];
+      this.port = Integer.valueOf(args[1]);
+    }
+
+    setupUi();
   }
 }
