@@ -3,10 +3,10 @@ package com.github.apohrebniak.hoverui.ui;
 import com.github.apohrebniak.hoverui.KvNodeService;
 import com.github.apohrebniak.hoverui.domain.KvEntity;
 import com.github.apohrebniak.hoverui.domain.MemberEntity;
-import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.html.Label;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -48,8 +48,11 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
 
   private void setupUi() {
     /*Title*/
-    String title = String.format("KV node %s:%d", this.host, this.port);
-    add(new Text(title));
+    Label title = new Label(String.format("KV node %s:%d", this.host, this.port));
+    title.getStyle().set("font-size", "40px");
+    title.getStyle().set("font-weight", "bold");
+    title.getStyle().set("font-family", "monospace");
+    add(title);
 
     /*Tabs*/
     Tabs tabs = new Tabs();

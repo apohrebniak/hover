@@ -1,9 +1,9 @@
 package com.github.apohrebniak.hoverui.ui;
 
 import com.github.apohrebniak.hoverui.domain.MemberEntity;
-import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.Label;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -14,6 +14,8 @@ public class MemberListItem extends VerticalLayout {
 
   public static MemberListItem from(MemberEntity entity) {
     MemberListItem item = new MemberListItem();
+    item.getStyle().set("background-color", "lavender");
+    item.getStyle().set("border-radius", "8px");
     item.foo(String.format("Hover Id: %s", entity.getId()));
     item.foo(String.format("Http address: %s:%d", entity.getHttpAddress().getIp(), entity.getHttpAddress().getPort()));
     item.foo(String.format("Hover node address: %s:%d", entity.getHoverNode().getAddr().getIp(), entity.getHoverNode().getAddr().getPort()));
@@ -31,6 +33,9 @@ public class MemberListItem extends VerticalLayout {
   }
 
   private void foo(String text) {
-    add(new Div(new Text(text)));
+    Label label = new Label(text);
+    label.getStyle().set("font-size", "20px");
+    label.getStyle().set("font-family", "monospace");
+    add(new Div(label));
   }
 }
