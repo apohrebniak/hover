@@ -62,4 +62,14 @@ public class KvNodeService {
     }
     return true;
   }
+
+  public boolean addKv(String host, Integer port, KvEntity item) {
+    try {
+      URI uri = URI.create("http://" + host + ":" + port + "/kv/" + item.getKey() + "?value=" + item.getValue());
+      restTemplate.exchange(uri, HttpMethod.POST, null, Object.class);
+    } catch (RestClientException ex) {
+      return false;
+    }
+    return true;
+  }
 }

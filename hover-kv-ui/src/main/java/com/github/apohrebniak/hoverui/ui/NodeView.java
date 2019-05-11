@@ -5,22 +5,24 @@ import com.github.apohrebniak.hoverui.domain.KvEntity;
 import com.github.apohrebniak.hoverui.domain.MemberEntity;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.provider.ListDataProvider;
+import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.BeforeEvent;
 import com.vaadin.flow.router.HasUrlParameter;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.spring.annotation.UIScope;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.net.URI;
 import java.util.*;
 
 @Route("node")
@@ -123,6 +125,47 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
       kvDataProvider.refreshAll();
     });//TODO react with error
 
+
+    FormLayout editPanel = new FormLayout();
+    Binder<KvEntity> binder = new Binder<>();
+    KvEntity editableEntity = KvEntity.builder().build();
+
+    TextField keyField = new TextField();
+    keyField.setLabel("Key");
+    keyField.setValueChangeMode(ValueChangeMode.EAGER);
+    keyField.setPlaceholder("foo");
+    Binder.Binding<KvEntity, String> keyBinding = binder.forField(keyField)
+        .withValidator(value -> !value.trim().isBlank(),
+            "Cannot be empty")
+        .bind(KvEntity::getKey, KvEntity::setKey);
+    keyField.addValueChangeListener(event -> keyBinding.validate());
+
+    TextField valueField = new TextField();
+    valueField.setLabel("Value");
+    valueField.setPlaceholder("bar");
+    keyField.setValueChangeMode(ValueChangeMode.EAGER);
+    Binder.Binding<KvEntity, String> valueBinding = binder.forField(valueField)
+        .withValidator(value -> !value.trim().isBlank(),
+            "Cannot be empty")
+        .bind(KvEntity::getValue, KvEntity::setValue);
+    valueField.addValueChangeListener(event -> valueBinding.validate());
+
+    Button addButton = new Button("Add");
+    addButton.addClickListener(event -> {
+      if (binder.writeBeanIfValid(editableEntity)) {
+        KvEntity copy = KvEntity.builder()
+            .key(editableEntity.getKey())
+            .value(editableEntity.getValue())
+            .build();
+        if (nodeService.addKv(host, port, copy)) {
+          kvData.add(copy);
+          kvDataProvider.refreshAll();
+        }
+        editableEntity.setKey(null);
+        editableEntity.setValue(null);
+      }
+    });
+
     Button removeButton = new Button("Remove");
     removeButton.setEnabled(false);
     removeButton.setIcon(new Icon(VaadinIcon.TRASH));
@@ -149,8 +192,13 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
       }
     });
 
-    HorizontalLayout editPanel = new HorizontalLayout();
-    editPanel.add(removeButton);
+    editPanel.add(keyField, valueField, addButton, removeButton);
+    editPanel.setResponsiveSteps(
+        new FormLayout.ResponsiveStep("0", 1),
+        new FormLayout.ResponsiveStep("21em", 2),
+        new FormLayout.ResponsiveStep("21em", 3),
+        new FormLayout.ResponsiveStep("21em", 4));
+
 
     page.add(editPanel);
     page.add(grid);
