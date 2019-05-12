@@ -8,6 +8,8 @@ extern crate serde;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::iter::FromIterator;
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 
 use gotham::helpers::http::response::{create_empty_response, create_response};
@@ -19,11 +21,11 @@ use gotham::router::Router;
 use gotham::state::{FromState, State};
 use hover::common::{Address, NodeMeta};
 use hover::events::EventListener;
+use hyper::rt::Future;
+use hyper::rt::Stream;
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
 use serde::{Deserialize, Serialize, Serializer};
-use std::net::{IpAddr, Ipv4Addr};
-use std::str::FromStr;
 use uuid::Uuid;
 
 pub mod settings;
@@ -33,11 +35,6 @@ struct HoverState {
     hover: Arc<RwLock<hover::Hover>>,
     map: Arc<RwLock<chashmap::CHashMap<String, String>>>,
     kv_nodes: Arc<RwLock<chashmap::CHashMap<Uuid, hover::common::Address>>>,
-}
-
-#[derive(Deserialize, StateData, StaticResponseExtender)]
-struct QueryStringExtractor {
-    value: String,
 }
 
 #[derive(Deserialize, StateData, StaticResponseExtender)]
@@ -52,11 +49,9 @@ struct KvMember {
     hover_node: NodeMeta,
 }
 
-fn get_info(mut state: State) -> (State, Response<Body>) {
-    let hover = HoverState::take_from(&mut state).hover;
-
-    let res = create_empty_response(&state, StatusCode::OK);
-    (state, res)
+#[derive(Deserialize)]
+struct Input {
+    value: String,
 }
 
 fn get_members(mut state: State) -> (State, Response<Body>) {
@@ -122,26 +117,49 @@ fn get_kv(mut state: State) -> (State, Response<Body>) {
 
 fn post_kv(mut state: State) -> (State, Response<Body>) {
     let key = PathStringExtractor::take_from(&mut state).key;
-    let value = QueryStringExtractor::take_from(&mut state).value;
     let hover_state = HoverState::take_from(&mut state);
     let map = hover_state.map;
     let hover = hover_state.hover;
+    let body = Body::take_from(&mut state)
+        .concat2()
+        .map(|chunk| chunk.into_bytes().to_vec())
+        .wait();
 
-    map.read().unwrap().insert(key.clone(), value.clone());
+    let mut status_code = StatusCode::OK;
 
-    let event = MapEvent::Post { key, value };
-    let event = bincode::serialize(&event).unwrap();
+    match body {
+        Ok(bytes) => {
+            let json: Result<Input, _> = serde_json::from_slice(bytes.as_slice());
+            match json {
+                Ok(input) => {
+                    map.read().unwrap().insert(key.clone(), input.value.clone());
 
-    hover
-        .read()
-        .unwrap()
-        .get_messaging_service()
-        .unwrap()
-        .read()
-        .unwrap()
-        .broadcast(event);
+                    let event = MapEvent::Post {
+                        key,
+                        value: input.value.clone(),
+                    };
+                    let event = bincode::serialize(&event).unwrap();
 
-    let res = create_empty_response(&state, StatusCode::OK);
+                    hover
+                        .read()
+                        .unwrap()
+                        .get_messaging_service()
+                        .unwrap()
+                        .read()
+                        .unwrap()
+                        .broadcast(event);
+                }
+                Err(_) => {
+                    status_code = StatusCode::BAD_REQUEST;
+                }
+            }
+        }
+        Err(_) => {
+            status_code = StatusCode::BAD_REQUEST;
+        }
+    }
+
+    let res = create_empty_response(&state, status_code);
     (state, res)
 }
 
@@ -176,7 +194,6 @@ fn router(hover_state: HoverState) -> Router {
     let pipeline = single_middleware(middleware);
     let (chain, pipelines) = single_pipeline(pipeline);
     build_router(chain, pipelines, |route| {
-        route.get("/").to(get_info);
         route.get("/members").to(get_members);
         route.get("/kv").to(get_kv_all);
         route
@@ -185,7 +202,6 @@ fn router(hover_state: HoverState) -> Router {
             .to(get_kv);
         route
             .post("/kv/:key")
-            .with_query_string_extractor::<QueryStringExtractor>()
             .with_path_extractor::<PathStringExtractor>()
             .to(post_kv);
         route
