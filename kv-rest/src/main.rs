@@ -127,21 +127,19 @@ fn post_kv(mut state: State) -> (State, Response<Body>) {
     let map = hover_state.map;
     let hover = hover_state.hover;
 
-    let inserted_opt = map.read().unwrap().insert(key.clone(), value.clone());
+    map.read().unwrap().insert(key.clone(), value.clone());
 
-    if let None = inserted_opt {
-        let event = MapEvent::Post { key, value };
-        let event = bincode::serialize(&event).unwrap();
+    let event = MapEvent::Post { key, value };
+    let event = bincode::serialize(&event).unwrap();
 
-        hover
-            .read()
-            .unwrap()
-            .get_messaging_service()
-            .unwrap()
-            .read()
-            .unwrap()
-            .broadcast(event);
-    };
+    hover
+        .read()
+        .unwrap()
+        .get_messaging_service()
+        .unwrap()
+        .read()
+        .unwrap()
+        .broadcast(event);
 
     let res = create_empty_response(&state, StatusCode::OK);
     (state, res)
