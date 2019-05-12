@@ -23,7 +23,7 @@ use self::uuid::Uuid;
 
 pub struct MessageDispatcher {
     listeners: Vec<Box<Fn(Arc<Message>) -> () + 'static + Send + Sync>>,
-    resp_callbacks: CHashMap<Uuid, Sender<Arc<Message>>>,
+    resp_callbacks: RwLock<CHashMap<Uuid, Sender<Arc<Message>>>>,
     event_loop: Arc<RwLock<EventLoop>>,
 }
 
@@ -31,7 +31,7 @@ impl MessageDispatcher {
     pub fn new(event_loop: Arc<RwLock<EventLoop>>) -> MessageDispatcher {
         MessageDispatcher {
             listeners: Vec::new(),
-            resp_callbacks: CHashMap::new(),
+            resp_callbacks: RwLock::new(CHashMap::new()),
             event_loop,
         }
     }
@@ -45,7 +45,7 @@ impl MessageDispatcher {
     }
 
     fn add_resp_callback(&self, msg_id: Uuid, sender: Sender<Arc<Message>>) {
-        match self.resp_callbacks.insert(msg_id, sender) {
+        match self.resp_callbacks.write().unwrap().insert(msg_id, sender) {
             Some(_) => {
                 println!("[MessageDispatcher]: overrides a resp_callback!");
             }
@@ -54,7 +54,7 @@ impl MessageDispatcher {
     }
 
     fn remove_resp_callback(&self, msg_id: Uuid) {
-        self.resp_callbacks.remove(&msg_id);
+        self.resp_callbacks.write().unwrap().remove(&msg_id);
     }
 
     fn handle_in_message(&self, msg: Arc<Message>) {
@@ -74,7 +74,7 @@ impl MessageDispatcher {
     }
 
     fn handle_response(&self, msg: Arc<Message>) {
-        match self.resp_callbacks.remove(&msg.cor_id) {
+        match self.resp_callbacks.read().unwrap().get(&msg.cor_id) {
             Some(sender) => {
                 sender.send(msg);
             }
@@ -302,7 +302,7 @@ impl MessagingService {
 
         //add message listener for given correlation id
         self.message_dispatcher
-            .write()
+            .read()
             .unwrap()
             .add_resp_callback(correlation_id, s);
 
@@ -310,7 +310,7 @@ impl MessagingService {
             Err(err) => {
                 eprintln!("[MessageSercive]: Error while sending a message!");
                 self.message_dispatcher
-                    .write()
+                    .read()
                     .unwrap()
                     .remove_resp_callback(correlation_id);
                 return Err(err);
@@ -322,7 +322,7 @@ impl MessagingService {
         return match r.recv_timeout(timeout) {
             Ok(response) => {
                 self.message_dispatcher
-                    .write()
+                    .read()
                     .unwrap()
                     .remove_resp_callback(correlation_id);
                 Ok(response)
@@ -330,7 +330,7 @@ impl MessagingService {
             Err(err) => {
                 eprintln!("[MessageService]: Error while waiting for the response!");
                 self.message_dispatcher
-                    .write()
+                    .read()
                     .unwrap()
                     .remove_resp_callback(correlation_id);
                 Err(Box::new(err))
