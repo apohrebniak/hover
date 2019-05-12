@@ -32,41 +32,63 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
   private static final String TAB_MEMBERS = "Members";
   private static final String TAB_KV = "Key-Values";
 
+  //internal state
   private KvNodeService nodeService;
   private Map<Tab, TabPage> tabToPage = new HashMap<>();
+  private ListDataProvider<KvEntity> kvDataProvider;
+  private List<KvEntity> kvData = new ArrayList<>();
 
+  //params
   private String host;
   private Integer port;
 
-  private ListDataProvider<KvEntity> kvDataProvider;
-  private List<KvEntity> kvData = new ArrayList<>();
+  //views
+  private Label title;
+  private Tabs tabs;
+  private TabPage membersPage;
+  private TabPage kvPage;
+  private Tab tabMembers;
+  private Tab tabKv;
+  private FormLayout editPanel;
+  private KvEntity editableEntity;
+  private TextField keyField;
+  private TextField valueField;
+  private Button addButton;
+  private Button removeButton;
 
   public NodeView(@Autowired KvNodeService nodeService) {
     this.nodeService = nodeService;
     this.kvDataProvider = DataProvider.ofCollection(kvData);
+    this.title = new Label();
+    this.tabs = new Tabs();
+    this.editPanel = new FormLayout();
+    this.editableEntity = KvEntity.builder().build();
+    this.keyField = new TextField();
+    this.valueField = new TextField();
+    this.addButton = new Button("Add");
+    this.removeButton = new Button("Remove");
   }
 
   private void setupUi() {
     /*Title*/
-    Label title = new Label(String.format("KV node %s:%d", this.host, this.port));
+    title.setText(String.format("KV node %s:%d", this.host, this.port));
     title.getStyle().set("font-size", "40px");
     title.getStyle().set("font-weight", "bold");
     title.getStyle().set("font-family", "monospace");
     add(title);
 
     /*Tabs*/
-    Tabs tabs = new Tabs();
     tabs.setSizeFull();
     add(tabs);
 
     /*Tab pages*/
-    TabPage membersPage = setupMembersPage();
-    TabPage kvPage = setupKvPage();
+    membersPage = setupMembersPage();
+    kvPage = setupKvPage();
     add(membersPage);
     add(kvPage);
 
-    Tab tabMembers = new Tab(TAB_MEMBERS);
-    Tab tabKv = new Tab(TAB_KV);
+    tabMembers = new Tab(TAB_MEMBERS);
+    tabKv = new Tab(TAB_KV);
     tabToPage.put(tabMembers, membersPage);
     tabToPage.put(tabKv, kvPage);
     tabs.add(tabMembers);
@@ -129,11 +151,8 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
     });//TODO react with error
 
 
-    FormLayout editPanel = new FormLayout();
     Binder<KvEntity> binder = new Binder<>();
-    KvEntity editableEntity = KvEntity.builder().build();
 
-    TextField keyField = new TextField();
     keyField.setLabel("Key");
     keyField.setValueChangeMode(ValueChangeMode.EAGER);
     keyField.setPlaceholder("foo");
@@ -143,7 +162,6 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
         .bind(KvEntity::getKey, KvEntity::setKey);
     keyField.addValueChangeListener(event -> keyBinding.validate());
 
-    TextField valueField = new TextField();
     valueField.setLabel("Value");
     valueField.setPlaceholder("bar");
     keyField.setValueChangeMode(ValueChangeMode.EAGER);
@@ -153,7 +171,6 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
         .bind(KvEntity::getValue, KvEntity::setValue);
     valueField.addValueChangeListener(event -> valueBinding.validate());
 
-    Button addButton = new Button("Add");
     addButton.addClickListener(event -> {
       if (binder.writeBeanIfValid(editableEntity)) {
         KvEntity copy = KvEntity.builder()
@@ -161,6 +178,7 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
             .value(editableEntity.getValue())
             .build();
         if (nodeService.addKv(host, port, copy)) {
+          kvData.removeIf(item -> item.getKey().equals(copy.getKey()));
           kvData.add(copy);
           kvDataProvider.refreshAll();
         }
@@ -169,7 +187,6 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
       }
     });
 
-    Button removeButton = new Button("Remove");
     removeButton.setEnabled(false);
     removeButton.setIcon(new Icon(VaadinIcon.TRASH));
     removeButton.addClickListener(event -> {
