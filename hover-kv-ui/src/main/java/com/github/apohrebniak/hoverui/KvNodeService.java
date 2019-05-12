@@ -23,42 +23,35 @@ public class KvNodeService {
   private RestTemplate restTemplate;
 
   public List<MemberEntity> getMembers(String host, Integer port) { //TODO: params
-    try {
-      URI uri = URI.create("http://" + host + ":" + port + "/members");
-      return restTemplate.exchange(uri,
-          HttpMethod.GET,
-          null,
-          new ParameterizedTypeReference<List<MemberEntity>>() {
-          }).getBody();
-    } catch (Exception e) {
-      return null;
-    }
+    URI uri = URI.create("http://" + host + ":" + port + "/members");
+    return restTemplate.exchange(uri,
+        HttpMethod.GET,
+        null,
+        new ParameterizedTypeReference<List<MemberEntity>>() {
+        }).getBody();
   }
 
   public Optional<List<KvEntity>> getKvAll(String host, Integer port) {
-    try {
-      URI uri = URI.create("http://" + host + ":" + port + "/kv");
-      return Optional.ofNullable(restTemplate.exchange(uri,
-          HttpMethod.GET,
-          null,
-          new ParameterizedTypeReference<Map<String, String>>() {
-          }).getBody())
-          .map(map -> map.entrySet()
-              .stream()
-              .map(e -> KvEntity.builder()
-                  .key(e.getKey())
-                  .value(e.getValue())
-                  .build())
-              .collect(Collectors.toList()));
-    } catch (Exception e) {
-      return Optional.empty();
-    }
+    URI uri = URI.create("http://" + host + ":" + port + "/kv");
+    return Optional.ofNullable(restTemplate.exchange(uri,
+        HttpMethod.GET,
+        null,
+        new ParameterizedTypeReference<Map<String, String>>() {
+        }).getBody())
+        .map(map -> map.entrySet()
+            .stream()
+            .map(e -> KvEntity.builder()
+                .key(e.getKey())
+                .value(e.getValue())
+                .build())
+            .collect(Collectors.toList()));
   }
 
   public boolean deleteKv(String host, Integer port, KvEntity item) {
     try {
       restTemplate.delete(URI.create("http://" + host + ":" + port.toString() + "/kv/" + item.getKey()));
     } catch (RestClientException ex) {
+      ex.printStackTrace();
       return false;
     }
     return true;

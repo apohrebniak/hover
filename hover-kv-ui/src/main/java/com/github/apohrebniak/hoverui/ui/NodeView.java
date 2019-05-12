@@ -2,13 +2,13 @@ package com.github.apohrebniak.hoverui.ui;
 
 import com.github.apohrebniak.hoverui.KvNodeService;
 import com.github.apohrebniak.hoverui.domain.KvEntity;
-import com.github.apohrebniak.hoverui.domain.MemberEntity;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.Label;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.tabs.Tab;
 import com.vaadin.flow.component.tabs.Tabs;
@@ -55,6 +55,7 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
   private TextField valueField;
   private Button addButton;
   private Button removeButton;
+  private Notification notification;
 
   public NodeView(@Autowired KvNodeService nodeService) {
     this.nodeService = nodeService;
@@ -67,9 +68,13 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
     this.valueField = new TextField();
     this.addButton = new Button("Add");
     this.removeButton = new Button("Remove");
+    this.notification = new Notification("Cannot connect to KV node...");
   }
 
   private void setupUi() {
+    notification.setPosition(Notification.Position.MIDDLE);
+    notification.setDuration(0);
+    notification.setOpened(false);
     /*Title*/
     title.setText(String.format("KV node %s:%d", this.host, this.port));
     title.getStyle().set("font-size", "40px");
@@ -123,13 +128,15 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
     TabPage page = new TabPage();
     page.setVisible(false);
 
-    List<MemberEntity> members = nodeService
-        .getMembers(host, port);
-
-    if (members != null) { //TODO react with error
-      members.stream()
-          .map(MemberListItem::from)
-          .forEach(page::add);
+    try {
+      Optional.of(nodeService
+          .getMembers(host, port))
+          .ifPresent(l -> l.stream()
+              .map(MemberListItem::from)
+              .forEach(page::add));
+    } catch (Exception e) {
+      e.printStackTrace();
+      notification.setOpened(true);
     }
 
     return page;
@@ -143,13 +150,16 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
     grid.setDataProvider(kvDataProvider);
     grid.setSelectionMode(Grid.SelectionMode.SINGLE);
 
-    Optional<List<KvEntity>> kvs =
-        nodeService.getKvAll(host, port);
-    kvs.ifPresent(l -> {
-      kvData.addAll(l);
-      kvDataProvider.refreshAll();
-    });//TODO react with error
-
+    try {
+      nodeService.getKvAll(host, port)
+          .ifPresent(l -> {
+            kvData.addAll(l);
+            kvDataProvider.refreshAll();
+          });
+    } catch (Exception e) {
+      e.printStackTrace();
+      notification.setOpened(true);
+    }
 
     Binder<KvEntity> binder = new Binder<>();
 
