@@ -4,6 +4,7 @@ import com.github.apohrebniak.hoverui.domain.KvEntity;
 import com.github.apohrebniak.hoverui.domain.MemberEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
@@ -65,8 +66,9 @@ public class KvNodeService {
 
   public boolean addKv(String host, Integer port, KvEntity item) {
     try {
-      URI uri = URI.create("http://" + host + ":" + port + "/kv/" + item.getKey() + "?value=" + item.getValue());
-      restTemplate.exchange(uri, HttpMethod.POST, null, Object.class);
+      URI uri = URI.create("http://" + host + ":" + port + "/kv/" + item.getKey());
+      HttpEntity<KvEntity> request = new HttpEntity<>(item);
+      restTemplate.exchange(uri, HttpMethod.POST, request, Object.class);
     } catch (RestClientException ex) {
       return false;
     }

@@ -157,8 +157,8 @@ public class NodeView extends VerticalLayout implements HasUrlParameter<String> 
     keyField.setValueChangeMode(ValueChangeMode.EAGER);
     keyField.setPlaceholder("foo");
     Binder.Binding<KvEntity, String> keyBinding = binder.forField(keyField)
-        .withValidator(value -> !value.trim().isBlank(),
-            "Cannot be empty")
+        .withValidator(value -> !value.trim().isBlank() && value.matches("^([A-Z]|[a-z])+$"),
+            "Should be a non empty sequence of letters!")
         .bind(KvEntity::getKey, KvEntity::setKey);
     keyField.addValueChangeListener(event -> keyBinding.validate());
 
