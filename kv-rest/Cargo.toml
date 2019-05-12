@@ -5,7 +5,7 @@ authors = ["apohrebniak <andrii.pohrebniak@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-hover = {git = "http://github.com/apohrebniak/hover", branch = "bug"}
+hover = {git = "http://github.com/apohrebniak/hover", branch = "master"}
 gotham = "0.3.0"
 gotham_derive = "0.3.0"
 hyper = "*"
