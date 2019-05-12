@@ -314,7 +314,7 @@ impl GossipProtocol {
             payload,
         };
 
-        self.add_to_out_buffer(broadcast_payload);
+        self.add_to_send_buffer(broadcast_payload);
     }
 
     fn handle_received_broadcast(&self, payload: BroadcastMessage) {
@@ -322,27 +322,11 @@ impl GossipProtocol {
             && !self.send_buffer.contains_key(&payload.id)
         {
             self.notify_listeners(payload.clone());
-            self.add_to_in_buffer(payload);
+            self.add_to_send_buffer(payload);
         }
     }
 
-    fn add_to_in_buffer(&self, payload: BroadcastMessage) {
-        let key = payload.id.clone();
-
-        let buffered_message = BufferedBroadcast {
-            rounds: 0,
-            send: false,
-            payload,
-        };
-
-        self.keep_buffer
-            .insert_new(key.clone(), Arc::new(RwLock::new(buffered_message)));
-        if self.keep_buffer.get(&key).is_some() {
-            self.keep_keys.write().unwrap().push(key)
-        }
-    }
-
-    fn add_to_out_buffer(&self, payload: BroadcastMessage) {
+    fn add_to_send_buffer(&self, payload: BroadcastMessage) {
         let key = payload.id.clone();
         let nodes = self.membership_service.read().unwrap().get_member_count() as isize as f32;
 
