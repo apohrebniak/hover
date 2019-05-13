@@ -5,7 +5,7 @@ authors = ["apohrebniak <andrii.pohrebniak@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-hover = {git = "http://github.com/apohrebniak/hover", branch = "master"}
+hover = {git = "http://github.com/apohrebniak/hover", branch = "2"}
 gotham = "0.3.0"
 gotham_derive = "0.3.0"
 hyper = "*"
@@ -16,3 +16,4 @@ chashmap = "2.2.2"
 bincode = "1.1.3"
 config = { version = "0.9", features = ["yaml"]}
 uuid = { version = "0.7", features = ["serde", "v4"] }
+futures = "0.1"

@@ -12,6 +12,11 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 
+use futures::future;
+use futures::future::Future;
+use futures::stream::Stream;
+use gotham::handler::HandlerFuture;
+use gotham::handler::IntoHandlerError;
 use gotham::helpers::http::response::{create_empty_response, create_response};
 use gotham::middleware::state::StateMiddleware;
 use gotham::pipeline::single::single_pipeline;
@@ -21,8 +26,6 @@ use gotham::router::Router;
 use gotham::state::{FromState, State};
 use hover::common::{Address, NodeMeta};
 use hover::events::EventListener;
-use hyper::rt::Future;
-use hyper::rt::Stream;
 use hyper::{Body, Response, StatusCode};
 use mime::Mime;
 use serde::{Deserialize, Serialize, Serializer};
@@ -115,52 +118,55 @@ fn get_kv(mut state: State) -> (State, Response<Body>) {
     (state, res)
 }
 
-fn post_kv(mut state: State) -> (State, Response<Body>) {
+fn body_handler<F>(mut state: State, f: F) -> Box<HandlerFuture>
+where
+    F: 'static + Send + Fn(Vec<u8>, &State) -> Response<Body>,
+{
+    let body = Body::take_from(&mut state)
+        .concat2()
+        .then(move |full_body| match full_body {
+            Ok(valid_body) => {
+                let body_content = valid_body.to_vec();
+                let res = f(body_content, &mut state);
+                future::ok((state, res))
+            }
+            Err(e) => return future::err((state, e.into_handler_error())),
+        });
+    Box::new(body)
+}
+
+fn post_kv(mut state: State) -> Box<HandlerFuture> {
     let key = PathStringExtractor::take_from(&mut state).key;
     let hover_state = HoverState::take_from(&mut state);
     let map = hover_state.map;
     let hover = hover_state.hover;
-    let body = Body::take_from(&mut state)
-        .concat2()
-        .map(|chunk| chunk.into_bytes().to_vec())
-        .wait();
 
-    let mut status_code = StatusCode::OK;
+    body_handler(state, move |body_bytes, state| {
+        let json: Result<Input, _> = serde_json::from_slice(body_bytes.as_slice());
+        match json {
+            Ok(input) => {
+                map.read().unwrap().insert(key.clone(), input.value.clone());
 
-    match body {
-        Ok(bytes) => {
-            let json: Result<Input, _> = serde_json::from_slice(bytes.as_slice());
-            match json {
-                Ok(input) => {
-                    map.read().unwrap().insert(key.clone(), input.value.clone());
+                let event = MapEvent::Post {
+                    key: key.clone(),
+                    value: input.value.clone(),
+                };
+                let event = bincode::serialize(&event).unwrap();
 
-                    let event = MapEvent::Post {
-                        key,
-                        value: input.value.clone(),
-                    };
-                    let event = bincode::serialize(&event).unwrap();
+                hover
+                    .read()
+                    .unwrap()
+                    .get_messaging_service()
+                    .unwrap()
+                    .read()
+                    .unwrap()
+                    .broadcast(event);
 
-                    hover
-                        .read()
-                        .unwrap()
-                        .get_messaging_service()
-                        .unwrap()
-                        .read()
-                        .unwrap()
-                        .broadcast(event);
-                }
-                Err(_) => {
-                    status_code = StatusCode::BAD_REQUEST;
-                }
+                create_empty_response(state, StatusCode::OK)
             }
+            Err(_) => create_empty_response(state, StatusCode::BAD_REQUEST),
         }
-        Err(_) => {
-            status_code = StatusCode::BAD_REQUEST;
-        }
-    }
-
-    let res = create_empty_response(&state, status_code);
-    (state, res)
+    })
 }
 
 fn delete_kv(mut state: State) -> (State, Response<Body>) {
