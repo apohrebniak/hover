@@ -37,7 +37,7 @@ pub struct Hover {
 
 impl Hover {
     fn new(conf: config::HoverConfig) -> Result<Hover, Box<Error>> {
-        println!("Initializing with config: {:?}", conf);
+        //println!("Initializing with config: {:?}", conf);
 
         let hover = Hover {
             node: Option::None,
@@ -238,7 +238,7 @@ impl Node {
         self.discovery_provider.read().unwrap().start();
         self.membership_service.read().unwrap().start();
 
-        println!("[Node]: Started");
+        //println!("[Node]: Started");
     }
 
     fn add_msg_listener<F>(&mut self, f: F) -> Result<(), Box<()>>

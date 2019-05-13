@@ -60,5 +60,5 @@ fn apply_default(conf: &mut config::Config) {
         .unwrap();
     conf.set_default("broadcast.fanout", "2").unwrap();
     conf.set_default("broadcast.rate_ms", "500").unwrap();
-    conf.set_default("broadcast.message_keep", "500").unwrap();
+    conf.set_default("broadcast.message_keep", "20").unwrap();
 }

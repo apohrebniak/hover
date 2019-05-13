@@ -47,7 +47,7 @@ impl MessageDispatcher {
     fn add_resp_callback(&self, msg_id: Uuid, sender: Sender<Arc<Message>>) {
         match self.resp_callbacks.write().unwrap().insert(msg_id, sender) {
             Some(_) => {
-                println!("[MessageDispatcher]: overrides a resp_callback!");
+                //println!("[MessageDispatcher]: overrides a resp_callback!");
             }
             None => {}
         }
@@ -308,7 +308,7 @@ impl MessagingService {
 
         match self.do_send(bytes, &addr) {
             Err(err) => {
-                eprintln!("[MessageSercive]: Error while sending a message!");
+                //                eprintln!("[MessageSercive]: Error while sending a message!");
                 self.message_dispatcher
                     .read()
                     .unwrap()
@@ -328,7 +328,7 @@ impl MessagingService {
                 Ok(response)
             }
             Err(err) => {
-                eprintln!("[MessageService]: Error while waiting for the response!");
+                //                eprintln!("[MessageService]: Error while waiting for the response!");
                 self.message_dispatcher
                     .read()
                     .unwrap()
