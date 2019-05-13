@@ -281,8 +281,8 @@ impl GossipProtocol {
         let mut rng = &mut rand::thread_rng();
 
         loop {
-            println!("SEND BUFFER {:?}", self.send_buffer);
-            println!("KEEP BUFFER {:?}", self.keep_buffer);
+            //            println!("SEND BUFFER {:?}", self.send_buffer);
+            //            println!("KEEP BUFFER {:?}", self.keep_buffer);
             let buffered_broadcast = self.choose_message_to_broadcast(&mut rng);
 
             let peer_count = self.membership_service.read().unwrap().get_member_count();
@@ -301,11 +301,11 @@ impl GossipProtocol {
                     msg.write().unwrap().rounds -= 1_i32;
                 }
 
-                println!("Before moving");
+                //                println!("Before moving");
                 self.move_to_keep_buffer();
             }
 
-            println!("Before keeping");
+            //            println!("Before keeping");
             self.remove_from_keep_buffer();
 
             std::thread::sleep(Duration::from_millis(self.config.rate_ms))
@@ -341,7 +341,7 @@ impl GossipProtocol {
             payload,
         };
 
-        println!("New broadcast {:?}", buffered_message);
+        //        println!("New broadcast {:?}", buffered_message);
 
         self.send_buffer
             .insert_new(key.clone(), Arc::new(RwLock::new(buffered_message)));
