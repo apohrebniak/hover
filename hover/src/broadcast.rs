@@ -431,16 +431,17 @@ impl GossipProtocol {
 }
 
 fn get_rounds_count(nodes: f32, fanout: f32) -> i32 {
-    if nodes <= 1.0 {
-        return 1_i32; // set one round if there is no nodes
-    }
-
-    let prob = 0.99_f32;
-
-    let x: f32 = nodes * prob / (1_f32 - prob);
-    let round_count: f32 = 2_f32 * x.ln() / fanout;
-
-    round_count.floor() as i64 as i32
+    //    if nodes <= 1.0 {
+    //        return 1_i32; // set one round if there is no nodes
+    //    }
+    //
+    //    let prob = 0.99_f32;
+    //
+    //    let x: f32 = nodes * prob / (1_f32 - prob);
+    //    let round_count: f32 = 2_f32 * x.ln() / fanout;
+    //
+    //    round_count.floor() as i64 as i32
+    5_i32
 }
 
 #[derive(Debug)]

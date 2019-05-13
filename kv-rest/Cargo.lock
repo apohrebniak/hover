@@ -345,7 +345,7 @@ dependencies = [
 [[package]]
 name = "hover"
 version = "0.1.0"
-source = "git+http://github.com/apohrebniak/hover?branch=2#0446a06fdf9b90beaa399a7049f25e1ba3070a95"
+source = "git+http://github.com/apohrebniak/hover?branch=2#acbdbdf8f8f5f5e700191a30788428e92965c07f"
 dependencies = [
  "bincode 1.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "chashmap 2.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
