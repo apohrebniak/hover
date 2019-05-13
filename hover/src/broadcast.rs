@@ -281,8 +281,8 @@ impl GossipProtocol {
         let mut rng = &mut rand::thread_rng();
 
         loop {
-            //            println!("SEND BUFFER {:?}", self.send_buffer);
-            //            println!("KEEP BUFFER {:?}", self.keep_buffer);
+            println!("[BroadcastService] SEND_BUFFER {:?}", self.send_buffer);
+            println!("[BroadcastService] KEEP BUFFER {:?}", self.keep_buffer);
             let buffered_broadcast = self.choose_message_to_broadcast(&mut rng);
 
             let peer_count = self.membership_service.read().unwrap().get_member_count();
