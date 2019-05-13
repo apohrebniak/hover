@@ -50,7 +50,7 @@ impl DiscoveryProvider {
         });
 
         self.worker_thread.lock().unwrap().replace(thread);
-        //println!("[DiscoveryProvider]: Started")
+        println!("[DiscoveryProvider]: Started")
     }
 }
 

@@ -59,7 +59,7 @@ impl MembershipService {
 
         self.swim_thread.lock().unwrap().replace(thread);
 
-        //println!("[MembershipService]: Membership service started");
+        println!("[MembershipService]: Membership service started");
     }
 
     /**Returns the full copy of the current members state*/
@@ -92,12 +92,12 @@ impl MembershipService {
     }
 
     fn handle_joined_node(&self, node: NodeMeta) {
-        //println!("[MembershipService]: Handled joined node: {:?}", node);
+        println!("[MembershipService]: Handled joined node: {:?}", node);
         self.swim.add_member(node);
     }
 
     fn handle_left_node(&self, node: NodeMeta) {
-        //println!("[MembershipService]: Handled left node: {:?}", node);
+        println!("[MembershipService]: Handled left node: {:?}", node);
         self.swim.remove_member(node);
     }
 
@@ -178,10 +178,10 @@ impl SwimProtocol {
         let mut rng = &mut rand::thread_rng();
 
         loop {
-            //println!(
-            //                "[MembershipService]: Available members: {:?}",
-            //                self.members.read().unwrap().as_slice()
-            //            );
+            println!(
+                "[MembershipService]: Available members: {:?}",
+                self.members.read().unwrap().as_slice()
+            );
 
             let members_ = self.members.read().unwrap().clone();
 
@@ -246,7 +246,7 @@ impl SwimProtocol {
 
     fn add_member(&self, node: NodeMeta) {
         if self.local_node_meta.id != node.id && !self.members.read().unwrap().contains(&node) {
-            //println!("[MembershipService]: Added node to cluster {:?}", &node);
+            println!("[MembershipService]: Added node to cluster {:?}", &node);
             self.members.write().unwrap().push(node.clone());
             self.event_loop
                 .read()
@@ -257,7 +257,7 @@ impl SwimProtocol {
 
     fn remove_member(&self, node: NodeMeta) {
         if self.members.read().unwrap().contains(&&node) {
-            //println!("[MembershipService]: Removed node from cluster {:?}", &node);
+            println!("[MembershipService]: Removed node from cluster {:?}", &node);
             self.members.write().unwrap().retain(|x| x != &node);
             self.event_loop
                 .read()

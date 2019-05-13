@@ -95,7 +95,7 @@ impl BroadcastService {
         //set thread handler to service. Service is the thread owner
         self.sender_thread.lock().unwrap().replace(sender_thread);
         self.handler_thread.lock().unwrap().replace(handler_thread);
-        //println!("[BroadcastService]: Started");
+        println!("[BroadcastService]: Started");
 
         Ok(())
     }
@@ -127,15 +127,15 @@ impl BroadcastService {
         let receiver_channel_ = self.receiver_channel.clone();
 
         let thread = std::thread::spawn(move || {
-            //println!("[BroadcastService]: Started sending multicast messages");
+            println!("[BroadcastService]: Started sending multicast messages");
             for msg in receiver_channel_.iter() {
                 let msg_bytes = serialize::to_bytes(&msg).unwrap();
 
                 match socket.send(msg_bytes.as_slice()) {
                     Ok(_) => {
-                        //println!("[BroadcastService]: Sent message to multicast group: OK");
+                        println!("[BroadcastService]: Sent message to multicast group: OK");
                     }
-                    Err(_) => {}//eprintln!("[BroadcastService]: Sent message to multicast group: ERR"),
+                    Err(_) => eprintln!("[BroadcastService]: Sent message to multicast group: ERR"),
                 };
             }
         });
@@ -157,7 +157,7 @@ impl BroadcastService {
                     }
                     Err(_) => {}
                 },
-                Err(_) => {}//println!("[BroadcastService]: Read message via multicast: ERR"),
+                Err(_) => eprintln!("[BroadcastService]: Read message via multicast: ERR"),
                 _ => {}
             }
         });
@@ -281,8 +281,6 @@ impl GossipProtocol {
         let mut rng = &mut rand::thread_rng();
 
         loop {
-            println!("[BroadcastService] SEND_BUFFER {:?}", self.send_buffer);
-            println!("[BroadcastService] KEEP BUFFER {:?}", self.keep_buffer);
             let buffered_broadcast = self.choose_message_to_broadcast(&mut rng);
 
             let peer_count = self.membership_service.read().unwrap().get_member_count();
@@ -301,11 +299,9 @@ impl GossipProtocol {
                     msg.write().unwrap().rounds -= 1_i32;
                 }
 
-                //                println!("Before moving");
                 self.move_to_keep_buffer();
             }
 
-            //            println!("Before keeping");
             self.remove_from_keep_buffer();
 
             std::thread::sleep(Duration::from_millis(self.config.rate_ms))
@@ -340,8 +336,6 @@ impl GossipProtocol {
             send: true,
             payload,
         };
-
-        //        println!("New broadcast {:?}", buffered_message);
 
         self.send_buffer
             .insert_new(key.clone(), Arc::new(RwLock::new(buffered_message)));

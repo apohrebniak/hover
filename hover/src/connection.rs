@@ -47,7 +47,7 @@ impl ConnectionService {
             .lock()
             .unwrap()
             .replace(thread_handler);
-        //println!("[ConnectionService]: Started");
+        println!("[ConnectionService]: Started");
     }
 
     fn build_inbound_socket(&self, addr: &Address) -> io::Result<TcpListener> {
@@ -69,26 +69,26 @@ impl ConnectionService {
                         Ok(size) if size > 0 => {
                             match serialize::from_bytes(buff.as_mut_slice()) {
                                 Ok(msg) => {
-                                    //println!(
-                                    //                                        "[ConnectionService]: Has read the message: {:?}",
-                                    //                                        msg
-                                    //                                    );
+                                    println!(
+                                        "[ConnectionService]: Has read the message: {:?}",
+                                        msg
+                                    );
                                     let event = Event::MessageIn { msg: Arc::new(msg) };
 
                                     loop_.read().unwrap().post_event(event);
                                 }
                                 Err(_) => {
-                                    //eprintln!("[ConnectionService]: Error while reading message structure");
+                                    eprintln!("[ConnectionService]: Error while reading message structure");
                                 }
                             };
                         }
                         Err(_) => {}
                         _ => {
-                            //println!("[ConnectionService]: Read 0 bytes");
+                            println!("[ConnectionService]: Read 0 bytes");
                         }
                     },
                     Err(_) => {
-                        //                        eprintln!("[ConnectionService]: Failed to start listener");
+                        eprintln!("[ConnectionService]: Failed to start listener");
                     }
                 }
             }
