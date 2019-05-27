@@ -1,7 +1,7 @@
 extern crate socket2;
 
 use std::cell::RefCell;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -37,7 +37,7 @@ impl ConnectionService {
         let running = self.running.store(true, Ordering::Relaxed);
 
         let tcp_listener = self
-            .build_inbound_socket(&self.local_node_meta.addr)
+            .build_inbound_socket(self.local_node_meta.addr.port)
             .unwrap();
 
         let thread_handler = self.listen(tcp_listener).unwrap();
@@ -50,8 +50,8 @@ impl ConnectionService {
         println!("[ConnectionService]: Started");
     }
 
-    fn build_inbound_socket(&self, addr: &Address) -> io::Result<TcpListener> {
-        TcpListener::bind((addr.ip, addr.port))
+    fn build_inbound_socket(&self, port: u16) -> io::Result<TcpListener> {
+        TcpListener::bind((Ipv4Addr::UNSPECIFIED, port))
     }
 
     fn listen(&self, tcp_listener: TcpListener) -> Result<JoinHandle<()>, Box<Error>> {
