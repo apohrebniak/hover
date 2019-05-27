@@ -254,7 +254,7 @@ pub fn main() {
         "Listening for requests at http://{}:{}",
         settings.host, settings.port
     );
-    gotham::start((Ipv4Addr::UNSPECIFIED.unwrap(), settings.port), router)
+    gotham::start((Ipv4Addr::UNSPECIFIED, settings.port), router)
 }
 
 #[derive(Deserialize, Serialize)]
